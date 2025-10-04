@@ -1,0 +1,31 @@
+# ========================
+# รายการไฟล์และโฟลเดอร์ที่ไม่ต้องการให้ Git ติดตาม
+# ใช้สำหรับโปรเจกต์ที่มีทั้ง client และ server
+# ========================
+
+# ไม่ติดตามโฟลเดอร์ node_modules (โฟลเดอร์เก็บแพ็กเกจจาก npm/yarn)
+node_modules/
+server/node_modules/
+
+# ไม่ติดตามโฟลเดอร์ build (ผลลัพธ์จากการ build frontend)
+client/build/
+
+# ไม่ติดตามไฟล์ .env (ไฟล์เก็บค่าความลับเช่น API key, DB password)
+# client/.env
+# client/.env.development
+# client/.env.production
+
+# server/.env
+# server/.env.development
+# server/.env.production
+
+# ไม่ติดตามไฟล์ log ที่เกิดจาก npm หรือ yarn (เวลารันผิดพลาด)
+# npm-debug.log*
+# yarn-debug.log*
+# yarn-error.log*
+
+# ไม่ติดตามไฟล์ระบบของ macOS
+# .DS_Store
+
+# หมายเหตุ: ถ้าต้องการให้คนอื่นดูตัวอย่างไฟล์ .env
+# ให้สร้างไฟล์ชื่อ .env.example และไม่ใส่ไว้ใน gitignore
