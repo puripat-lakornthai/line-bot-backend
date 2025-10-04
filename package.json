@@ -1,0 +1,33 @@
+{
+  "name": "my-helpdesk-server",
+  "version": "1.0.0",
+  "main": "src/index.js",
+  "description": "Backend server for My Helpdesk application",
+  "author": "Puripat",
+  "license": "ISC",
+  "keywords": ["helpdesk", "ticket", "support"],
+  "scripts": {
+    "start": "node src/index.js",                 
+    "prod": "cross-env NODE_ENV=production node src/index.js", 
+    "dev": "nodemon src/index.js",
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "db:init": "psql -U your_postgres_user -d my_helpdesk_db -a -f schema.sql"
+  },
+  "dependencies": {
+    "@line/bot-sdk": "^8.4.1",
+    "axios": "^1.7.2",
+    "bcryptjs": "^2.4.3",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "exceljs": "^4.4.0",
+    "express": "^4.19.2",
+    "jsonwebtoken": "^9.0.2",
+    "multer": "^1.4.5-lts.1",
+    "mysql2": "^3.14.1",
+    "pg": "^8.11.5"
+  },
+  "devDependencies": {
+    "cross-env": "^7.0.3",
+    "nodemon": "^3.1.10"
+  }
+}
