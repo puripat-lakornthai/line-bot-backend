@@ -1,3 +1,4 @@
+// server/src/index.js
 const path = require('path');
 const express = require('express');
 const cors = require('cors');
@@ -23,30 +24,27 @@ const reportRoutes = require('./routes/reportRoutes');
 // ตั้งค่า origin ที่อนุญาต
 const allowedOrigins = [
   process.env.CLIENT_URL, // ใช้จาก .env
-  /^https:\/\/[a-z0-9\-]+\.ngrok-free\.app$/, // รองรับ ngrok
-  /^https:\/\/.*\.trycloudflare\.com$/,       // รองรับ cloudflare tunnel
-  /^https:\/\/[a-z0-9\-]+\.loca\.lt$/,        // รองรับ localtunnel
+  // 'http://localhost:3000',
+  // 'http://localhost:5000',
+  /^https:\/\/[a-z0-9\-]+\.ngrok-free\.app$/, // รองรับ ngrok และลองใช้ให้ติดต่อกับ frontend แล้ว ngrok พังเพราะมันมีปัญหาอะไรสักอย่างกับ CORS 
+  /^https:\/\/.*\.trycloudflare\.com$/, // รองรับ cloudflare tunnel
+  /^https:\/\/[a-z0-9\-]+\.loca\.lt$/, // รองรับ localtunnel
   "https://puripat.online",
 ];
 
-// ✅ CORS whitelist + credentials (แก้เฉพาะส่วนนี้)
+// CORS whitelist + credentials
 app.use(cors({
   origin: (origin, callback) => {
     if (!origin) return callback(null, true);
     const ok = allowedOrigins.some(o =>
       o instanceof RegExp ? o.test(origin) : o === origin
     );
-    if (ok) return callback(null, true); // ✅ แก้จาก origin → true
+    if (ok) return callback(null, origin);
     return callback(new Error('Not allowed by CORS'));
   },
   credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
   optionsSuccessStatus: 200,
 }));
-
-// ✅ ให้ preflight (OPTIONS) ผ่านแน่นอน
-app.options('*', cors());
 
 // ตรวจสอบ path webhook ก่อนใช้
 const lineWebhookPath = process.env.LINE_WEBHOOK_PATH || '/webhook';
@@ -83,7 +81,9 @@ app.get('/health', (req, res) => {
   res.json({ status: 'UP', timestamp: new Date().toISOString() });
 });
 
-// ล้างไฟล์ temp อัตโนมัติทุก 10 นาที
+// require() มัน เป็นคำสั่งที่โหลดไฟล์ได้ทุกที่ ตอนแรกใช้ import แล้วมันพังตอน verify ใน line
+// lazy load 🧹 เริ่มล้างไฟล์ temp อัตโนมัติทุก ๆ 30 นาที
+// โดยจะลบเฉพาะไฟล์ที่ "อายุมากกว่า 60 วินาที" เท่านั้น
 setInterval(() => {
   console.log(`🧹 ล้างไฟล์ temp (${new Date().toLocaleString('th-TH')})`);
   try {
