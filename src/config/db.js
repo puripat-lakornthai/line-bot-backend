@@ -3,8 +3,8 @@ const mysql = require('mysql2/promise'); // ใช้ mysql2/promise เพื�
 const path = require('node:path');
 const fs = require('node:fs');
 
-// โหลด .env เฉพาะตอนที่ไม่ใช่ production และ "ไม่ override" ค่า ENV จากแพลตฟอร์ม
-const envPath = path.join(__dirname, '../../.env');
+// โหลด .env.development เฉพาะตอนที่ไม่ใช่ production และ "ไม่ override" ค่า ENV จากแพลตฟอร์ม
+const envPath = path.join(__dirname, '../../.env.development');
 if (process.env.NODE_ENV !== 'production' && fs.existsSync(envPath)) {
   require('dotenv').config({ path: envPath, override: false });
 }
