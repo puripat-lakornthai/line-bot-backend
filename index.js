@@ -1,4 +1,4 @@
-// server/src/index.js
+// /index.js
 const path = require('path');
 const express = require('express');
 const cors = require('cors');
@@ -7,11 +7,8 @@ const dotenv = require('dotenv');
 
 const app = express();
 
-// โหลด env ตาม NODE_ENV
-const envPath = process.env.NODE_ENV === 'production'
-  ? path.join(__dirname, '../.env.production')
-  : path.join(__dirname, '../.env');
-dotenv.config({ path: envPath });
+// โหลด env (ถ้ามีไฟล์ .env ก็อ่าน; ถ้าไม่มีใช้ ENV จากระบบ)
+dotenv.config();
 
 // โหลด routes
 const authRoutes = require('./src/routes/authRoutes');
@@ -26,10 +23,10 @@ const allowedOrigins = [
   process.env.CLIENT_URL, // ใช้จาก .env
   // 'http://localhost:3000',
   // 'http://localhost:5000',
-  /^https:\/\/[a-z0-9\-]+\.ngrok-free\.app$/, // รองรับ ngrok และลองใช้ให้ติดต่อกับ frontend แล้ว ngrok พังเพราะมันมีปัญหาอะไรสักอย่างกับ CORS 
+  /^https:\/\/[a-z0-9\-]+\.ngrok-free\.app$/, // รองรับ ngrok และลองใช้ให้ติดต่อกับ frontend แล้ว ngrok พังเพราะมันมีปัญหาอะไรสักอย่างกับ CORS
   /^https:\/\/.*\.trycloudflare\.com$/, // รองรับ cloudflare tunnel
   /^https:\/\/[a-z0-9\-]+\.loca\.lt$/, // รองรับ localtunnel
-  "https://puripat.online",
+  'https://puripat.online',
 ];
 
 // CORS whitelist + credentials
@@ -65,8 +62,8 @@ app.post(`/api/line${lineWebhookPath}`, express.raw({
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Static uploads
-app.use('/uploads', express.static(path.join(__dirname, 'line/uploads')));
+// Static uploads (ตำแหน่งจริงอยู่ใน src/line/uploads)
+app.use('/uploads', express.static(path.join(__dirname, 'src/line/uploads')));
 
 // API routes
 app.use('/api/auth', authRoutes);
@@ -95,8 +92,8 @@ setInterval(() => {
 }, 1000 * 60 * 10);
 
 // Start server
-const PORT = process.env.PORT || 3001;
-app.listen(PORT, () => {
+const PORT = process.env.PORT || 8080;
+app.listen(PORT, '0.0.0.0', () => {
   console.log(`Server running on port ${PORT} [${process.env.NODE_ENV}]`);
 });
 
