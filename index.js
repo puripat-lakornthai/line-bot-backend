@@ -1,38 +1,46 @@
-// /index.js
+// server/src/index.js
 const path = require('path');
 const express = require('express');
 const cors = require('cors');
 const dotenv = require('dotenv');
-// const { cleanOldTempFiles } = require('./src/line/services/mediaService');
+// const { cleanOldTempFiles } = require('./line/services/mediaService');
 
 const app = express();
 
-// โหลด env (ถ้ามีไฟล์ .env ก็อ่าน, ถ้าไม่มีจะใช้ env จากระบบ)
-dotenv.config();
+// โหลด env ตาม NODE_ENV
+const envPath = process.env.NODE_ENV === 'production'
+  ? path.join(__dirname, '../.env.production')
+  : path.join(__dirname, '../.env');
+dotenv.config({ path: envPath });
 
-// โหลด routes (index.js อยู่นอกราก src => ต้องมี ./src/ นำหน้า)
-const authRoutes   = require('./src/routes/authRoutes');
+// โหลด routes
+const authRoutes = require('./src/routes/authRoutes');
 const ticketRoutes = require('./src/routes/ticketRoutes');
-const lineRoutes   = require('./src/line/routes/lineRoutes');
-const userRoutes   = require('./src/routes/userRoutes');
-const statsRoutes  = require('./src/routes/statsRoutes');
+const lineRoutes = require('./src/line/routes/lineRoutes');
+const userRoutes = require('./src/routes/userRoutes');
+const statsRoutes = require('./src/routes/statsRoutes');
 const reportRoutes = require('./src/routes/reportRoutes');
 
 // ตั้งค่า origin ที่อนุญาต
 const allowedOrigins = [
-  process.env.CLIENT_URL,
-  /^https:\/\/[a-z0-9\-]+\.ngrok-free\.app$/,
-  /^https:\/\/.*\.trycloudflare\.com$/,
-  /^https:\/\/[a-z0-9\-]+\.loca\.lt$/,
-  'https://puripat.online',
+  process.env.CLIENT_URL, // ใช้จาก .env
+  // 'http://localhost:3000',
+  // 'http://localhost:5000',
+  /^https:\/\/[a-z0-9\-]+\.ngrok-free\.app$/, // รองรับ ngrok และลองใช้ให้ติดต่อกับ frontend แล้ว ngrok พังเพราะมันมีปัญหาอะไรสักอย่างกับ CORS 
+  /^https:\/\/.*\.trycloudflare\.com$/, // รองรับ cloudflare tunnel
+  /^https:\/\/[a-z0-9\-]+\.loca\.lt$/, // รองรับ localtunnel
+  "https://puripat.online",
 ];
 
 // CORS whitelist + credentials
 app.use(cors({
-  origin: (origin, cb) => {
-    if (!origin) return cb(null, true);
-    const ok = allowedOrigins.some(o => o instanceof RegExp ? o.test(origin) : o === origin);
-    return ok ? cb(null, origin) : cb(new Error('Not allowed by CORS'));
+  origin: (origin, callback) => {
+    if (!origin) return callback(null, true);
+    const ok = allowedOrigins.some(o =>
+      o instanceof RegExp ? o.test(origin) : o === origin
+    );
+    if (ok) return callback(null, origin);
+    return callback(new Error('Not allowed by CORS'));
   },
   credentials: true,
   optionsSuccessStatus: 200,
@@ -45,25 +53,27 @@ if (!lineWebhookPath.startsWith('/')) {
 }
 console.log(`LINE webhook listening at: /api/line${lineWebhookPath}`);
 
-// LINE webhook ต้องใช้ raw body (ประกาศก่อน body-parser)
+// LINE webhook ต้องใช้ raw body
 app.post(`/api/line${lineWebhookPath}`, express.raw({
   type: 'application/json',
-  verify: (req, res, buf) => { req.rawBody = buf.toString(); }
+  verify: (req, res, buf) => {
+    req.rawBody = buf.toString();
+  }
 }));
 
 // Body parsers
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Static uploads (อยู่ที่ src/line/uploads)
-app.use('/uploads', express.static(path.join(__dirname, 'src/line/uploads')));
+// Static uploads
+app.use('/uploads', express.static(path.join(__dirname, 'line/uploads')));
 
 // API routes
-app.use('/api/auth',   authRoutes);
+app.use('/api/auth', authRoutes);
 app.use('/api/tickets', ticketRoutes);
-app.use('/api/line',    lineRoutes);
-app.use('/api/users',   userRoutes);
-app.use('/api/stats',   statsRoutes);
+app.use('/api/line', lineRoutes);
+app.use('/api/users', userRoutes);
+app.use('/api/stats', statsRoutes);
 app.use('/api/reports', reportRoutes);
 
 // Health check
@@ -71,7 +81,9 @@ app.get('/health', (req, res) => {
   res.json({ status: 'UP', timestamp: new Date().toISOString() });
 });
 
-// ล้างไฟล์ temp ทุก 10 นาที (lazy load)
+// require() มัน เป็นคำสั่งที่โหลดไฟล์ได้ทุกที่ ตอนแรกใช้ import แล้วมันพังตอน verify ใน line
+// lazy load 🧹 เริ่มล้างไฟล์ temp อัตโนมัติทุก ๆ 30 นาที
+// โดยจะลบเฉพาะไฟล์ที่ "อายุมากกว่า 60 วินาที" เท่านั้น
 setInterval(() => {
   console.log(`🧹 ล้างไฟล์ temp (${new Date().toLocaleString('th-TH')})`);
   try {
@@ -83,8 +95,8 @@ setInterval(() => {
 }, 1000 * 60 * 10);
 
 // Start server
-const PORT = process.env.PORT || 8080;
-app.listen(PORT, '0.0.0.0', () => {
+const PORT = process.env.PORT || 3001;
+app.listen(PORT, () => {
   console.log(`Server running on port ${PORT} [${process.env.NODE_ENV}]`);
 });
 
