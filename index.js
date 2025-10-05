@@ -14,12 +14,12 @@ const envPath = process.env.NODE_ENV === 'production'
 dotenv.config({ path: envPath });
 
 // โหลด routes
-const authRoutes = require('./routes/authRoutes');
-const ticketRoutes = require('./routes/ticketRoutes');
-const lineRoutes = require('./line/routes/lineRoutes');
-const userRoutes = require('./routes/userRoutes');
-const statsRoutes = require('./routes/statsRoutes');
-const reportRoutes = require('./routes/reportRoutes');
+const authRoutes = require('./src/routes/authRoutes');
+const ticketRoutes = require('./src/routes/ticketRoutes');
+const lineRoutes = require('./src/line/routes/lineRoutes');
+const userRoutes = require('./src/routes/userRoutes');
+const statsRoutes = require('./src/routes/statsRoutes');
+const reportRoutes = require('./src/routes/reportRoutes');
 
 // ตั้งค่า origin ที่อนุญาต
 const allowedOrigins = [
@@ -87,7 +87,7 @@ app.get('/health', (req, res) => {
 setInterval(() => {
   console.log(`🧹 ล้างไฟล์ temp (${new Date().toLocaleString('th-TH')})`);
   try {
-    const { cleanOldTempFiles } = require('./line/services/mediaService');
+    const { cleanOldTempFiles } = require('./src/line/services/mediaService');
     cleanOldTempFiles(60);
   } catch (err) {
     console.error('❌ ล้างไฟล์ temp ล้มเหลว:', err.message);
