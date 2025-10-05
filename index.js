@@ -92,8 +92,7 @@ setInterval(() => {
 }, 1000 * 60 * 10);
 
 // Start server
-const PORT = process.env.PORT || 8080;
-app.listen(PORT, '0.0.0.0', () => {
+const PORT = process.env.PORT || 3001;
+app.listen(PORT, () => {
   console.log(`Server running on port ${PORT} [${process.env.NODE_ENV}]`);
 });
-
