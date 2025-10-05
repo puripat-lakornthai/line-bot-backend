@@ -4,20 +4,30 @@ const db = require('../config/db');
 exports.getAllTicketsWithFilter = async (filters) => {
   // รับค่าจาก controller
   const {
-    offset,               // ตำแหน่งเริ่มต้นที่คำนวณจาก controller
-    limit,                // จำนวนรายการต่อหน้า
-    status,               // กรองสถานะ
-    assignee_id,          // กรองผู้รับผิดชอบ
-    sort_by = 'updated_at', // คอลัมน์ที่ใช้เรียงข้อมูล
-    sort_order = 'DESC'     // ทิศทางเรียง (ASC หรือ DESC)
+    offset,
+    limit,
+    status,
+    assignee_id,
+    sort_by = 'updated_at',
+    sort_order = 'DESC'
   } = filters;
 
-  const where = [];       // เก็บเงื่อนไข WHERE
-  const params = [];      // เก็บพารามิเตอร์สำหรับ SQL
+  // sanitize ชื่อคอลัมน์และทิศทางสำหรับ ORDER BY
+  const COL_MAP = {
+    updated_at: 'updated_at',
+    created_at: 'created_at',
+    priority: 'priority',
+    status: 'status',
+  };
+  const orderCol = COL_MAP[String(sort_by)] || 'updated_at';
+  const orderDir = (String(sort_order).toUpperCase() === 'ASC') ? 'ASC' : 'DESC';
+
+  const where = [];
+  const params = [];
 
   // กรองสถานะ (ถ้ามี)
   if (status) {
-    where.push('t.status = ?');
+    where.push('t.`status` = ?');
     params.push(status);
   }
 
@@ -31,7 +41,9 @@ exports.getAllTicketsWithFilter = async (filters) => {
     } else {
       // เฉพาะ ticket ที่มีผู้รับผิดชอบตรงกับ ID ที่ระบุ
       where.push(`EXISTS (
-        SELECT 1 FROM ticket_assignees ta2 WHERE ta2.ticket_id = t.ticket_id AND ta2.staff_id = ?
+        SELECT 1
+        FROM ticket_assignees ta2
+        WHERE ta2.ticket_id = t.ticket_id AND ta2.staff_id = ?
       )`);
       params.push(assignee_id);
     }
@@ -40,7 +52,8 @@ exports.getAllTicketsWithFilter = async (filters) => {
   // รวม WHERE ทั้งหมด
   const whereClause = where.length > 0 ? `WHERE ${where.join(' AND ')}` : '';
 
-  // SQL: ดึง ticket ตาม filter พร้อมชื่อผู้รับผิดชอบ (GROUP_CONCAT)
+  // ✅ หลบ ONLY_FULL_GROUP_BY:
+  //    รวมชื่อผู้รับผิดชอบในซับเควรี แล้ว JOIN กลับ — ไม่ต้อง GROUP BY คอลัมน์อื่น
   const ticketsSql = `
     SELECT
       t.ticket_id,
@@ -49,21 +62,23 @@ exports.getAllTicketsWithFilter = async (filters) => {
       t.updated_at,
       t.created_at,
       t.requester_name AS requester_fullname,
-      GROUP_CONCAT(u.full_name SEPARATOR ', ') AS assignee_fullname
+      ta.assignee_fullname
     FROM tickets t
-    LEFT JOIN ticket_assignees ta ON t.ticket_id = ta.ticket_id
-    LEFT JOIN users u ON ta.staff_id = u.user_id
+    LEFT JOIN (
+      SELECT ta.ticket_id, GROUP_CONCAT(u.full_name SEPARATOR ', ') AS assignee_fullname
+      FROM ticket_assignees ta
+      LEFT JOIN users u ON u.user_id = ta.staff_id
+      GROUP BY ta.ticket_id
+    ) ta ON ta.ticket_id = t.ticket_id
     ${whereClause}
-    GROUP BY t.ticket_id
-    ORDER BY t.${sort_by} ${sort_order}
+    ORDER BY \`${orderCol}\` ${orderDir}
     LIMIT ? OFFSET ?
   `;
 
-  // SQL: นับจำนวนรายการทั้งหมด (ใช้สำหรับคำนวณ totalPages)
+  // ✅ นับจำนวนทั้งหมดจากตารางหลัก (ใช้ where เดียวกัน)
   const totalSql = `
-    SELECT COUNT(DISTINCT t.ticket_id) AS total
+    SELECT COUNT(*) AS total
     FROM tickets t
-    LEFT JOIN ticket_assignees ta ON t.ticket_id = ta.ticket_id
     ${whereClause}
   `;
 
@@ -73,11 +88,11 @@ exports.getAllTicketsWithFilter = async (filters) => {
     db.query(totalSql, params)
   ]);
 
-  const total = totalRes[0]?.total || 0; // จำนวนทั้งหมดของ ticket
+  const total = totalRes[0]?.total || 0;
 
   return {
-    tickets, // รายการ ticket
-    total    // จำนวนทั้งหมด
+    tickets,   // รายการ ticket
+    total      // จำนวนทั้งหมด
   };
 };
 

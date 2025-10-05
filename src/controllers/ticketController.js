@@ -27,12 +27,12 @@ exports.getAllTickets = async (req, res) => {
 
     // เตรียม filters สำหรับส่งเข้า model
     const filters = {
-      offset,  // เริ่มดึงจากแถวที่เท่าไร
-      limit,  // ดึงกี่รายการ
-      status: req.query.status,  // กรองสถานะ
-      assignee_id: req.query.assignee_id,   // กรองผู้รับผิดชอบ
-      sort_by: req.query.sort_by,   // เรียงตามคอลัมน์
-      sort_order: req.query.sort_order   // เรียงจากมากไปน้อย
+      offset,                 // เริ่มดึงจากแถวที่เท่าไร
+      limit,                  // ดึงกี่รายการ
+      status: req.query.status,          // กรองสถานะ
+      assignee_id: req.query.assignee_id, // กรองผู้รับผิดชอบ
+      sort_by: req.query.sort_by,         // เรียงตามคอลัมน์
+      sort_order: req.query.sort_order    // ทิศทางเรียง
     };
 
     // เรียก model เพื่อดึงข้อมูล
@@ -40,10 +40,10 @@ exports.getAllTickets = async (req, res) => {
 
     // ส่งผลลัพธ์กลับ frontend
     res.status(200).json({
-      tickets: data.tickets ?? [],                     // รายการ ticket
-      totalPages: Math.ceil(data.total / limit),       // จำนวนหน้าทั้งหมด
-      total: data.total,                               // จำนวนทั้งหมด
-      currentPage: page,                               // หน้าปัจจุบัน
+      tickets: data.tickets ?? [],
+      totalPages: Math.max(1, Math.ceil((data.total || 0) / limit)),  // ✅ กัน 0 และค่า undefined
+      total: data.total ?? 0,
+      currentPage: page,
     });
   } catch (error) {
     console.error('Get All Tickets Controller Error:', error);
