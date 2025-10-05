@@ -95,7 +95,8 @@ setInterval(() => {
 }, 1000 * 60 * 10);
 
 // Start server
-const PORT = process.env.PORT || 3001;
-app.listen(PORT, () => {
+const PORT = process.env.PORT || 8080;  // เผื่อค่า PORT ไม่มี ให้ดีฟอลต์ 8080
+app.listen(PORT, '0.0.0.0', () => {
   console.log(`Server running on port ${PORT} [${process.env.NODE_ENV}]`);
 });
+
