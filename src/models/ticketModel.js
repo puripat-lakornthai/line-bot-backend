@@ -2,45 +2,38 @@ const db = require('../config/db');
 
 // ดึงรายการ ticket ทั้งหมดจากฐานข้อมูล พร้อมรองรับ filter และ pagination (ผ่าน offset + limit)
 exports.getAllTicketsWithFilter = async (filters) => {
-  // รับค่าจาก controller
   const {
-    offset,               // ตำแหน่งเริ่มต้นที่คำนวณจาก controller
-    limit,                // จำนวนรายการต่อหน้า
-    status,               // กรองสถานะ
-    assignee_id,          // กรองผู้รับผิดชอบ
-    sort_by = 'updated_at', // คอลัมน์ที่ใช้เรียงข้อมูล
-    sort_order = 'DESC'     // ทิศทางเรียง (ASC หรือ DESC)
+    offset,
+    limit,
+    status,
+    assignee_id,
+    sort_by = 'updated_at',
+    sort_order = 'DESC'
   } = filters;
 
-  const where = [];       // เก็บเงื่อนไข WHERE
-  const params = [];      // เก็บพารามิเตอร์สำหรับ SQL
+  const where = [];
+  const params = [];
 
-  // กรองสถานะ (ถ้ามี)
   if (status) {
     where.push('t.status = ?');
     params.push(status);
   }
 
-  // กรองผู้รับผิดชอบ (ถ้ามี)
   if (assignee_id) {
     if (assignee_id === 'null') {
-      // เฉพาะ ticket ที่ยังไม่มีผู้รับผิดชอบ
       where.push(`NOT EXISTS (
         SELECT 1 FROM ticket_assignees ta2 WHERE ta2.ticket_id = t.ticket_id
       )`);
     } else {
-      // เฉพาะ ticket ที่มีผู้รับผิดชอบตรงกับ ID ที่ระบุ
       where.push(`EXISTS (
-        SELECT 1 FROM ticket_assignees ta2 WHERE ta2.ticket_id = t.ticket_id AND ta2.staff_id = ?
-      )`);
+        SELECT 1 FROM ticket_assignees ta2 WHERE ta2.ticket_id = t.ticket_id AND ta2.staff_id = ? )`);
       params.push(assignee_id);
     }
   }
 
-  // รวม WHERE ทั้งหมด
   const whereClause = where.length > 0 ? `WHERE ${where.join(' AND ')}` : '';
 
-  // SQL: ดึง ticket ตาม filter พร้อมชื่อผู้รับผิดชอบ (GROUP_CONCAT)
+  // แก้เฉพาะตรงนี้เท่านั้น: ใช้ subquery แทน GROUP_CONCAT ตรง ๆ เพื่อไม่ชน ONLY_FULL_GROUP_BY
   const ticketsSql = `
     SELECT
       t.ticket_id,
@@ -49,36 +42,32 @@ exports.getAllTicketsWithFilter = async (filters) => {
       t.updated_at,
       t.created_at,
       t.requester_name AS requester_fullname,
-      GROUP_CONCAT(u.full_name SEPARATOR ', ') AS assignee_fullname
+      (
+        SELECT GROUP_CONCAT(u.full_name SEPARATOR ', ')
+        FROM ticket_assignees ta
+        JOIN users u ON ta.staff_id = u.user_id
+        WHERE ta.ticket_id = t.ticket_id
+      ) AS assignee_fullname
     FROM tickets t
-    LEFT JOIN ticket_assignees ta ON t.ticket_id = ta.ticket_id
-    LEFT JOIN users u ON ta.staff_id = u.user_id
     ${whereClause}
-    GROUP BY t.ticket_id
     ORDER BY t.${sort_by} ${sort_order}
     LIMIT ? OFFSET ?
   `;
 
-  // SQL: นับจำนวนรายการทั้งหมด (ใช้สำหรับคำนวณ totalPages)
   const totalSql = `
-    SELECT COUNT(DISTINCT t.ticket_id) AS total
+    SELECT COUNT(*) AS total
     FROM tickets t
-    LEFT JOIN ticket_assignees ta ON t.ticket_id = ta.ticket_id
     ${whereClause}
   `;
 
-  // ✅ แก้แค่ตรงนี้เท่านั้น
   const [[tickets], [totalRes]] = await Promise.all([
-    db.query(ticketsSql, [...params, limit, offset]),
+    db.query(ticketsSql, [...params, Number(limit), Number(offset)]),
     db.query(totalSql, params)
   ]);
 
-  const total = totalRes?.[0]?.total || 0; // จำนวนทั้งหมดของ ticket
+  const total = totalRes?.[0]?.total || 0;
 
-  return {
-    tickets, // รายการ ticket
-    total    // จำนวนทั้งหมด
-  };
+  return { tickets, total };
 };
 
 // ดึง ticket รายตัว (รวมผู้รับผิดชอบและแนบไฟล์)
@@ -88,8 +77,7 @@ exports.getTicketById = async (ticketId) => {
     FROM tickets t
     WHERE t.ticket_id = ?
   `;
-  // ✅ แก้เฉพาะตรงนี้
-  const [result] = await db.query(ticketSql, [ticketId]);
+  const result = await db.query(ticketSql, [ticketId]);
   if (!result || result.length === 0) return null;
 
   const assigneesSql = `
@@ -100,9 +88,8 @@ exports.getTicketById = async (ticketId) => {
   `;
   const attachmentsSql = `SELECT * FROM attachments WHERE ticket_id = ?`;
 
-  // ✅ แก้เฉพาะตรงนี้
-  const [assignees] = await db.query(assigneesSql, [ticketId]);
-  const [attachments] = await db.query(attachmentsSql, [ticketId]);
+  const assignees = await db.query(assigneesSql, [ticketId]);
+  const attachments = await db.query(attachmentsSql, [ticketId]);
 
   return {
     ...result[0],
@@ -278,8 +265,8 @@ exports.isStaffAssignedToTicket = async (ticketId, staffId) => {
 
 // ดึงรายการ tickets ทั้งหมดของผู้ใช้จาก line_user_id (line)
 exports.getTicketsByLineUserId = async (lineUserId) => {
-  // ✅ แก้เฉพาะตรงนี้
-  const [rows] = await db.query(
+  // ค้นหา ticket_id, title, และ status เรียงจากล่าสุดไปเก่าสุด
+  const rows = await db.query(
     'SELECT ticket_id, title, status FROM tickets WHERE line_user_id = ? ORDER BY created_at DESC',
     [lineUserId]
   );
