@@ -200,7 +200,13 @@ const handleTextMessage = async (event) => {
         retryCount: 0,
       });
 
-      return reply(event.replyToken, '📎 กรุณาส่งภาพ, ไฟล์, หรือวิดีโอ (พิมพ์ "ไม่มี" หรือ "เสร็จแล้ว" เพื่อจบ)');
+      return reply(
+        event.replyToken,
+        '📎 กรุณาส่งภาพ ไฟล์ หรือวิดีโอที่เกี่ยวข้อง\n' +
+        '• พิมพ์ "เสร็จแล้ว" เพื่อยืนยันการแนบไฟล์\n' +
+        '• พิมพ์ "ไม่มี" หากไม่ต้องการแนบไฟล์\n' +
+        '• พิมพ์ "ยกเลิก" เพื่อยกเลิกการแจ้งปัญหา'
+      );
     }
 
     case 'wait_image': {
@@ -228,25 +234,31 @@ const handleTextMessage = async (event) => {
         ticketId = insertId;
       }
 
-      // ดึงไฟล์จาก session (ที่เก็บไว้ใน temp) แล้วแนบกับ ticket
+      // ดึงไฟล์จาก session (ที่เก็บไว้ใน temp)
       const latestSess = await sessionStore.getSession(uid);
       const pendingFiles = latestSess?.data?.pending_files || [];
 
-      for (const m of pendingFiles) {
-        // ย้ายไฟล์จาก temp ไปยังโฟลเดอร์ถาวรของ ticket
-        const perm = moveTempToPermanent(m, ticketId);
+      // แยกกรณีตามข้อความของผู้ใช้
+      if (lower === 'เสร็จแล้ว' && pendingFiles.length > 0) {
+        for (const m of pendingFiles) {
+          // ย้ายไฟล์จาก temp ไปยังโฟลเดอร์ถาวรของ ticket
+          const perm = moveTempToPermanent(m, ticketId);
 
-        // บันทึกไฟล์แนบลงใน database
-        await Ticket.addAttachments(
-          ticketId,
-          [{
-            file_name: perm.originalname,
-            file_path: perm.path,
-            mime_type: perm.mimetype,
-            file_size: perm.size,
-          }],
-          requesterId
-        );
+          // บันทึกไฟล์แนบลงใน database
+          await Ticket.addAttachments(
+            ticketId,
+            [{
+              file_name: perm.originalname,
+              file_path: perm.path,
+              mime_type: perm.mimetype,
+              file_size: perm.size,
+            }],
+            requesterId
+          );
+        }
+      } else if (lower === 'ไม่มี' && pendingFiles.length > 0) {
+        // ผู้ใช้ไม่ต้องการแนบไฟล์ → ลบไฟล์ temp ที่ค้างอยู่ทั้งหมด
+        await deleteTempFiles(latestSess);
       }
 
       // เคลียร์ session และแจ้งผู้ใช้ว่าสร้าง ticket สำเร็จแล้ว
