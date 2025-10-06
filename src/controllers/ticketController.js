@@ -18,30 +18,32 @@ exports.createTicket = async (req, res) => {
 };
 
 // ดึง ticket ทั้งหมด โดยมี filter + pagination (คำนวณใน controller)
-// ✅ แก้เฉพาะฟังก์ชันนี้
 exports.getAllTickets = async (req, res) => {
   try {
+    // ดึงค่า page จาก query string และบังคับให้ page >= 1
     const page = Math.max(parseInt(req.query.page) || 1, 1);
-    const limit = process.env.NODE_ENV === 'production' ? 10 : 2; // dev=2, prod=10
-    const offset = (page - 1) * limit;
+    const limit = 2; // จำนวนรายการต่อหน้า
+    const offset = (page - 1) * limit; // คำนวณ offset สำหรับ SQL
 
+    // เตรียม filters สำหรับส่งเข้า model
     const filters = {
-      offset,
-      limit,
-      status: req.query.status,
-      assignee_id: req.query.assignee_id,
-      sort_by: req.query.sort_by,
-      sort_order: req.query.sort_order
+      offset,  // เริ่มดึงจากแถวที่เท่าไร
+      limit,  // ดึงกี่รายการ
+      status: req.query.status,  // กรองสถานะ
+      assignee_id: req.query.assignee_id,   // กรองผู้รับผิดชอบ
+      sort_by: req.query.sort_by,   // เรียงตามคอลัมน์
+      sort_order: req.query.sort_order   // เรียงจากมากไปน้อย
     };
 
+    // เรียก model เพื่อดึงข้อมูล
     const data = await ticketModel.getAllTicketsWithFilter(filters);
-    const total = data?.total ?? 0;
 
+    // ส่งผลลัพธ์กลับ frontend
     res.status(200).json({
-      tickets: data?.tickets ?? [],
-      totalPages: Math.max(1, Math.ceil(total / limit)),
-      total,
-      currentPage: page,
+      tickets: data.tickets ?? [],                     // รายการ ticket
+      totalPages: Math.ceil(data.total / limit),       // จำนวนหน้าทั้งหมด
+      total: data.total,                               // จำนวนทั้งหมด
+      currentPage: page,                               // หน้าปัจจุบัน
     });
   } catch (error) {
     console.error('Get All Tickets Controller Error:', error);
@@ -54,7 +56,6 @@ exports.getAllTickets = async (req, res) => {
     });
   }
 };
-
 
 // ดึงข้อมูล Ticket รายการเดียว (เฉพาะรายการที่มีสิทธิ์เข้าถึง)
 exports.getTicketById = async (req, res) => {

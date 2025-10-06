@@ -2,35 +2,45 @@ const db = require('../config/db');
 
 // ดึงรายการ ticket ทั้งหมดจากฐานข้อมูล พร้อมรองรับ filter และ pagination (ผ่าน offset + limit)
 exports.getAllTicketsWithFilter = async (filters) => {
+  // รับค่าจาก controller
   const {
-    offset,
-    limit,
-    status,
-    assignee_id,
-    sort_by = 'updated_at',
-    sort_order = 'DESC'
+    offset,               // ตำแหน่งเริ่มต้นที่คำนวณจาก controller
+    limit,                // จำนวนรายการต่อหน้า
+    status,               // กรองสถานะ
+    assignee_id,          // กรองผู้รับผิดชอบ
+    sort_by = 'updated_at', // คอลัมน์ที่ใช้เรียงข้อมูล
+    sort_order = 'DESC'     // ทิศทางเรียง (ASC หรือ DESC)
   } = filters;
 
-  const where = [];
-  const params = [];
+  const where = [];       // เก็บเงื่อนไข WHERE
+  const params = [];      // เก็บพารามิเตอร์สำหรับ SQL
 
+  // กรองสถานะ (ถ้ามี)
   if (status) {
     where.push('t.status = ?');
     params.push(status);
   }
 
+  // กรองผู้รับผิดชอบ (ถ้ามี)
   if (assignee_id) {
     if (assignee_id === 'null') {
-      where.push(`NOT EXISTS (SELECT 1 FROM ticket_assignees ta2 WHERE ta2.ticket_id = t.ticket_id)`);
+      // เฉพาะ ticket ที่ยังไม่มีผู้รับผิดชอบ
+      where.push(`NOT EXISTS (
+        SELECT 1 FROM ticket_assignees ta2 WHERE ta2.ticket_id = t.ticket_id
+      )`);
     } else {
-      where.push(`EXISTS (SELECT 1 FROM ticket_assignees ta2 WHERE ta2.ticket_id = t.ticket_id AND ta2.staff_id = ?)`);
+      // เฉพาะ ticket ที่มีผู้รับผิดชอบตรงกับ ID ที่ระบุ
+      where.push(`EXISTS (
+        SELECT 1 FROM ticket_assignees ta2 WHERE ta2.ticket_id = t.ticket_id AND ta2.staff_id = ?
+      )`);
       params.push(assignee_id);
     }
   }
 
+  // รวม WHERE ทั้งหมด
   const whereClause = where.length > 0 ? `WHERE ${where.join(' AND ')}` : '';
 
-  // ใช้ subquery หลบ ONLY_FULL_GROUP_BY
+  // SQL: ดึง ticket ตาม filter พร้อมชื่อผู้รับผิดชอบ (GROUP_CONCAT)
   const ticketsSql = `
     SELECT
       t.ticket_id,
@@ -39,46 +49,36 @@ exports.getAllTicketsWithFilter = async (filters) => {
       t.updated_at,
       t.created_at,
       t.requester_name AS requester_fullname,
-      (
-        SELECT GROUP_CONCAT(u.full_name SEPARATOR ', ')
-        FROM ticket_assignees ta
-        JOIN users u ON ta.staff_id = u.user_id
-        WHERE ta.ticket_id = t.ticket_id
-      ) AS assignee_fullname
+      GROUP_CONCAT(u.full_name SEPARATOR ', ') AS assignee_fullname
     FROM tickets t
+    LEFT JOIN ticket_assignees ta ON t.ticket_id = ta.ticket_id
+    LEFT JOIN users u ON ta.staff_id = u.user_id
     ${whereClause}
-    ORDER BY t.${sort_by} ${String(sort_order).toUpperCase() === 'ASC' ? 'ASC' : 'DESC'}
+    GROUP BY t.ticket_id
+    ORDER BY t.${sort_by} ${sort_order}
     LIMIT ? OFFSET ?
   `;
 
+  // SQL: นับจำนวนรายการทั้งหมด (ใช้สำหรับคำนวณ totalPages)
   const totalSql = `
-    SELECT COUNT(*) AS total
+    SELECT COUNT(DISTINCT t.ticket_id) AS total
     FROM tickets t
+    LEFT JOIN ticket_assignees ta ON t.ticket_id = ta.ticket_id
     ${whereClause}
   `;
 
-  // ✅ สำคัญ: บังคับเป็น Number กัน driver งอแง
-  const lim = Number(limit) || 10;
-  const off = Number(offset) || 0;
+  // ดึงข้อมูลพร้อมกันทั้ง tickets และ total
+  const [tickets, totalRes] = await Promise.all([
+    db.query(ticketsSql, [...params, limit, offset]),
+    db.query(totalSql, params)
+  ]);
 
-  try {
-    const [ticketRows] = await db.query(ticketsSql, [...params, lim, off]);
-    const [totalRows]  = await db.query(totalSql, params);
-    return {
-      tickets: ticketRows,
-      total: totalRows?.[0]?.total || 0,
-    };
-  } catch (err) {
-    console.error('[SQL ERROR:getAllTicketsWithFilter]', {
-      code: err.code,
-      errno: err.errno,
-      sqlState: err.sqlState,
-      sqlMessage: err.sqlMessage,
-      sql: err.sql,
-      params: [...params, lim, off],
-    });
-    throw err; // ให้ controller ส่ง 500 ออกมา จะได้เห็นใน log ชัด ๆ
-  }
+  const total = totalRes[0]?.total || 0; // จำนวนทั้งหมดของ ticket
+
+  return {
+    tickets, // รายการ ticket
+    total    // จำนวนทั้งหมด
+  };
 };
 
 // ดึง ticket รายตัว (รวมผู้รับผิดชอบและแนบไฟล์)
