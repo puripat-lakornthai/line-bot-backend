@@ -22,7 +22,10 @@ exports.getAllTickets = async (req, res) => {
   try {
     // ดึงค่า page จาก query string และบังคับให้ page >= 1
     const page = Math.max(parseInt(req.query.page) || 1, 1);
-    const limit = 2; // จำนวนรายการต่อหน้า
+
+    // ✅ แก้ตรงนี้เท่านั้น: limit แยก dev/prod อัตโนมัติ
+    const limit = process.env.NODE_ENV === 'production' ? 10 : 2;
+
     const offset = (page - 1) * limit; // คำนวณ offset สำหรับ SQL
 
     // เตรียม filters สำหรับส่งเข้า model
