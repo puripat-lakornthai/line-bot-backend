@@ -18,36 +18,28 @@ exports.createTicket = async (req, res) => {
 };
 
 // ดึง ticket ทั้งหมด โดยมี filter + pagination (คำนวณใน controller)
+// ✅ แก้เฉพาะฟังก์ชันนี้
 exports.getAllTickets = async (req, res) => {
   try {
-    // ดึงค่า page จาก query string และบังคับให้ page >= 1
     const page = Math.max(parseInt(req.query.page) || 1, 1);
+    const limit = process.env.NODE_ENV === 'production' ? 10 : 2; // dev=2, prod=10
+    const offset = (page - 1) * limit;
 
-    // ✅ แก้ตรงนี้เท่านั้น: limit แยก dev/prod อัตโนมัติ
-    const limit = process.env.NODE_ENV === 'production' ? 10 : 2;
-
-    const offset = (page - 1) * limit; // คำนวณ offset สำหรับ SQL
-
-    // เตรียม filters สำหรับส่งเข้า model
     const filters = {
-      offset,                 // เริ่มดึงจากแถวที่เท่าไร
-      limit,                  // ดึงกี่รายการ
-      status: req.query.status,          // กรองสถานะ
-      assignee_id: req.query.assignee_id, // กรองผู้รับผิดชอบ
-      sort_by: req.query.sort_by,         // เรียงตามคอลัมน์
-      sort_order: req.query.sort_order    // ทิศทางเรียง
+      offset,
+      limit,
+      status: req.query.status,
+      assignee_id: req.query.assignee_id,
+      sort_by: req.query.sort_by,
+      sort_order: req.query.sort_order
     };
 
-    // เรียก model เพื่อดึงข้อมูล
-    // ✅ แก้ตรงนี้เท่านั้น เพื่อรองรับ mysql2/promise (rows, fields)
     const data = await ticketModel.getAllTicketsWithFilter(filters);
-    const tickets = Array.isArray(data?.tickets) ? data.tickets : [];
     const total = data?.total ?? 0;
 
-    // ส่งผลลัพธ์กลับ frontend
     res.status(200).json({
-      tickets,
-      totalPages: Math.max(1, Math.ceil(total / limit)),  // ✅ กัน 0 และค่า undefined
+      tickets: data?.tickets ?? [],
+      totalPages: Math.max(1, Math.ceil(total / limit)),
       total,
       currentPage: page,
     });
@@ -62,6 +54,7 @@ exports.getAllTickets = async (req, res) => {
     });
   }
 };
+
 
 // ดึงข้อมูล Ticket รายการเดียว (เฉพาะรายการที่มีสิทธิ์เข้าถึง)
 exports.getTicketById = async (req, res) => {
