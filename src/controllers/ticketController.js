@@ -39,13 +39,16 @@ exports.getAllTickets = async (req, res) => {
     };
 
     // เรียก model เพื่อดึงข้อมูล
+    // ✅ แก้ตรงนี้เท่านั้น เพื่อรองรับ mysql2/promise (rows, fields)
     const data = await ticketModel.getAllTicketsWithFilter(filters);
+    const tickets = Array.isArray(data?.tickets) ? data.tickets : [];
+    const total = data?.total ?? 0;
 
     // ส่งผลลัพธ์กลับ frontend
     res.status(200).json({
-      tickets: data.tickets ?? [],
-      totalPages: Math.max(1, Math.ceil((data.total || 0) / limit)),  // ✅ กัน 0 และค่า undefined
-      total: data.total ?? 0,
+      tickets,
+      totalPages: Math.max(1, Math.ceil(total / limit)),  // ✅ กัน 0 และค่า undefined
+      total,
       currentPage: page,
     });
   } catch (error) {

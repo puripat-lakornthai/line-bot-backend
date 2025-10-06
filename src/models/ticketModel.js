@@ -67,13 +67,13 @@ exports.getAllTicketsWithFilter = async (filters) => {
     ${whereClause}
   `;
 
-  // ดึงข้อมูลพร้อมกันทั้ง tickets และ total
-  const [tickets, totalRes] = await Promise.all([
+  // ✅ แก้แค่ตรงนี้เท่านั้น
+  const [[tickets], [totalRes]] = await Promise.all([
     db.query(ticketsSql, [...params, limit, offset]),
     db.query(totalSql, params)
   ]);
 
-  const total = totalRes[0]?.total || 0; // จำนวนทั้งหมดของ ticket
+  const total = totalRes?.[0]?.total || 0; // จำนวนทั้งหมดของ ticket
 
   return {
     tickets, // รายการ ticket
@@ -88,7 +88,8 @@ exports.getTicketById = async (ticketId) => {
     FROM tickets t
     WHERE t.ticket_id = ?
   `;
-  const result = await db.query(ticketSql, [ticketId]);
+  // ✅ แก้เฉพาะตรงนี้
+  const [result] = await db.query(ticketSql, [ticketId]);
   if (!result || result.length === 0) return null;
 
   const assigneesSql = `
@@ -99,8 +100,9 @@ exports.getTicketById = async (ticketId) => {
   `;
   const attachmentsSql = `SELECT * FROM attachments WHERE ticket_id = ?`;
 
-  const assignees = await db.query(assigneesSql, [ticketId]);
-  const attachments = await db.query(attachmentsSql, [ticketId]);
+  // ✅ แก้เฉพาะตรงนี้
+  const [assignees] = await db.query(assigneesSql, [ticketId]);
+  const [attachments] = await db.query(attachmentsSql, [ticketId]);
 
   return {
     ...result[0],
@@ -276,8 +278,8 @@ exports.isStaffAssignedToTicket = async (ticketId, staffId) => {
 
 // ดึงรายการ tickets ทั้งหมดของผู้ใช้จาก line_user_id (line)
 exports.getTicketsByLineUserId = async (lineUserId) => {
-  // ค้นหา ticket_id, title, และ status เรียงจากล่าสุดไปเก่าสุด
-  const rows = await db.query(
+  // ✅ แก้เฉพาะตรงนี้
+  const [rows] = await db.query(
     'SELECT ticket_id, title, status FROM tickets WHERE line_user_id = ? ORDER BY created_at DESC',
     [lineUserId]
   );
