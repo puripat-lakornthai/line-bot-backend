@@ -1,10 +1,6 @@
 const db = require('../config/db');
 
 // ดึงรายการ ticket ทั้งหมดจากฐานข้อมูล พร้อมรองรับ filter และ pagination (ผ่าน offset + limit)
-// ✅ ดึงรายการ ticket ทั้งหมดจากฐานข้อมูล พร้อมรองรับ filter และ pagination
-// ✅ ปลอด ONLY_FULL_GROUP_BY
-// ✅ ใช้ whitelist ป้องกัน ORDER BY injection
-// ✅ เข้ากับ db.query() ของคุณที่คืน array ตรง ๆ
 exports.getAllTicketsWithFilter = async (filters) => {
   const {
     offset = 0,
@@ -15,27 +11,22 @@ exports.getAllTicketsWithFilter = async (filters) => {
     sort_order = 'DESC'
   } = filters;
 
-  // --- 1) whitelist สำหรับ sort ---
+  // 1) whitelist sort
   const SORT_COLUMNS = new Set(['updated_at', 'created_at', 'title', 'status', 'ticket_id']);
-  const SORT_ORDERS = new Set(['ASC', 'DESC']);
-  const sortCol = SORT_COLUMNS.has(String(sort_by)) ? String(sort_by) : 'updated_at';
+  const SORT_ORDERS  = new Set(['ASC', 'DESC']);
+  const sortCol   = SORT_COLUMNS.has(String(sort_by))   ? String(sort_by)   : 'updated_at';
   const sortOrder = SORT_ORDERS.has(String(sort_order)) ? String(sort_order) : 'DESC';
 
-  // --- 2) เงื่อนไข filter ---
+  // 2) WHERE
   const where = [];
   const params = [];
-
   if (status) {
     where.push('t.status = ?');
     params.push(status);
   }
-
   if (assignee_id) {
     if (assignee_id === 'null') {
-      // ตั๋วที่ยังไม่มีผู้รับผิดชอบ
-      where.push(`NOT EXISTS (
-        SELECT 1 FROM ticket_assignees ta2 WHERE ta2.ticket_id = t.ticket_id
-      )`);
+      where.push(`NOT EXISTS (SELECT 1 FROM ticket_assignees ta2 WHERE ta2.ticket_id = t.ticket_id)`);
     } else {
       where.push(`EXISTS (
         SELECT 1 FROM ticket_assignees ta2
@@ -44,35 +35,36 @@ exports.getAllTicketsWithFilter = async (filters) => {
       params.push(assignee_id);
     }
   }
-
   const whereClause = where.length ? `WHERE ${where.join(' AND ')}` : '';
 
-  // --- 3) คัด ID ก่อน (เลี่ยง ONLY_FULL_GROUP_BY) ---
+  // 3) คัด ID ก่อน (อินไลน์ LIMIT/OFFSET – ไม่มี ?)
+  const safeLimit  = Math.max(0, Number(limit)  || 10);
+  const safeOffset = Math.max(0, Number(offset) || 0);
+
   const idSql = `
     SELECT t.ticket_id
     FROM tickets t
     ${whereClause}
     ORDER BY t.${sortCol} ${sortOrder}
-    LIMIT ? OFFSET ?
+    LIMIT ${safeLimit} OFFSET ${safeOffset}
   `;
-  const idParams = [...params, Number(limit), Number(offset)];
-  const idRows = await db.query(idSql, idParams); // ✅ ไม่ destructure
+  const idRows = await db.query(idSql, params);      // ใช้ params เฉพาะ WHERE
   const ticketIds = idRows.map(r => r.ticket_id);
 
-  // --- 4) นับ total ตาม filter เดิม ---
+  // 4) นับ total
   const totalSql = `
     SELECT COUNT(DISTINCT t.ticket_id) AS total
     FROM tickets t
     ${whereClause}
   `;
-  const totalRows = await db.query(totalSql, params); // ✅ ไม่ destructure
+  const totalRows = await db.query(totalSql, params);
   const total = totalRows[0]?.total ?? 0;
 
   if (ticketIds.length === 0) {
     return { tickets: [], total };
   }
 
-  // --- 5) ดึงรายละเอียด tickets + ชื่อผู้รับผิดชอบ ---
+  // 5) รายละเอียด + ชื่อผู้รับผิดชอบ (aggregate แยก)
   const ticketsSql = `
     SELECT
       t.ticket_id,
@@ -84,9 +76,7 @@ exports.getAllTicketsWithFilter = async (filters) => {
       a.assignee_fullname
     FROM tickets t
     LEFT JOIN (
-      SELECT
-        ta.ticket_id,
-        GROUP_CONCAT(u.full_name SEPARATOR ', ') AS assignee_fullname
+      SELECT ta.ticket_id, GROUP_CONCAT(u.full_name SEPARATOR ', ') AS assignee_fullname
       FROM ticket_assignees ta
       JOIN users u ON u.user_id = ta.staff_id
       GROUP BY ta.ticket_id
@@ -94,12 +84,9 @@ exports.getAllTicketsWithFilter = async (filters) => {
     WHERE t.ticket_id IN (${ticketIds.map(() => '?').join(',')})
     ORDER BY t.${sortCol} ${sortOrder}
   `;
-  const ticketRows = await db.query(ticketsSql, ticketIds); // ✅ ไม่ destructure
+  const ticketRows = await db.query(ticketsSql, ticketIds);
 
-  return {
-    tickets: ticketRows,
-    total
-  };
+  return { tickets: ticketRows, total };
 };
 
 // ดึง ticket รายตัว (รวมผู้รับผิดชอบและแนบไฟล์)
