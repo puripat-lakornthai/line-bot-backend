@@ -1,6 +1,10 @@
 const db = require('../config/db');
 
 // ดึงรายการ ticket ทั้งหมดจากฐานข้อมูล พร้อมรองรับ filter และ pagination (ผ่าน offset + limit)
+// ดึงรายการ ticket ทั้งหมดจากฐานข้อมูล พร้อมรองรับ filter และ pagination
+// ✅ ปลอด ONLY_FULL_GROUP_BY (คัด ID ก่อนค่อยดึงรายละเอียด)
+// ✅ ใช้ whitelist กัน ORDER BY พัง/SQLi
+// ✅ db.query แบบ mysql2/promise (destructure เป็น [rows])
 exports.getAllTicketsWithFilter = async (filters) => {
   const {
     offset = 0,
@@ -34,8 +38,7 @@ exports.getAllTicketsWithFilter = async (filters) => {
       )`);
     } else {
       where.push(`EXISTS (
-        SELECT 1
-        FROM ticket_assignees ta2
+        SELECT 1 FROM ticket_assignees ta2
         WHERE ta2.ticket_id = t.ticket_id AND ta2.staff_id = ?
       )`);
       params.push(assignee_id);
@@ -44,7 +47,7 @@ exports.getAllTicketsWithFilter = async (filters) => {
 
   const whereClause = where.length ? `WHERE ${where.join(' AND ')}` : '';
 
-  // --- 3) ดึง id ล่วงหน้า (แก้ปัญหา ONLY_FULL_GROUP_BY) ---
+  // --- 3) คัด ID ก่อน (แก้ปัญหา ONLY_FULL_GROUP_BY ชัวร์สุด) ---
   const idSql = `
     SELECT t.ticket_id
     FROM tickets t
@@ -56,22 +59,20 @@ exports.getAllTicketsWithFilter = async (filters) => {
   const [idRows] = await db.query(idSql, idParams);
   const ticketIds = idRows.map(r => r.ticket_id);
 
-  // ถ้าไม่พบ id ใด ๆ ก็รีเทิร์นว่าง ๆ เลย
-  if (ticketIds.length === 0) {
-    // นับ total (ใช้ where เดิม)
-    const totalSql = `
-      SELECT COUNT(DISTINCT t.ticket_id) AS total
-      FROM tickets t
-      ${whereClause}
-    `;
-    const [totalRows] = await db.query(totalSql, params);
-    const total = totalRows[0]?.total ?? 0;
+  // --- 4) นับ total ตาม filter เดิม ---
+  const totalSql = `
+    SELECT COUNT(DISTINCT t.ticket_id) AS total
+    FROM tickets t
+    ${whereClause}
+  `;
+  const [totalRows] = await db.query(totalSql, params);
+  const total = totalRows[0]?.total ?? 0;
 
+  if (ticketIds.length === 0) {
     return { tickets: [], total };
   }
 
-  // --- 4) ดึงรายละเอียด tickets เฉพาะ id ชุดที่คัดมา (ไม่ใช้ GROUP BY บนทุกคอลัมน์) ---
-  // รวมชื่อผู้รับผิดชอบด้วย subquery ที่ aggregate แยก
+  // --- 5) ดึงรายละเอียด tickets + ชื่อผู้รับผิดชอบ (aggregate แยกใน subquery) ---
   const ticketsSql = `
     SELECT
       t.ticket_id,
@@ -79,7 +80,7 @@ exports.getAllTicketsWithFilter = async (filters) => {
       t.status,
       t.updated_at,
       t.created_at,
-      COALESCE(t.requester_fullname, t.requester_name, t.requester) AS requester_fullname,
+      t.requester_name AS requester_fullname,     -- ✅ field จริงใน DB
       a.assignee_fullname
     FROM tickets t
     LEFT JOIN (
@@ -94,15 +95,6 @@ exports.getAllTicketsWithFilter = async (filters) => {
     ORDER BY t.${sortCol} ${sortOrder}
   `;
   const [ticketRows] = await db.query(ticketsSql, ticketIds);
-
-  // --- 5) นับ total ทั้งหมดภายใต้ filter เดิม ---
-  const totalSql = `
-    SELECT COUNT(DISTINCT t.ticket_id) AS total
-    FROM tickets t
-    ${whereClause}
-  `;
-  const [totalRows] = await db.query(totalSql, params);
-  const total = totalRows[0]?.total ?? 0;
 
   return {
     tickets: ticketRows,
