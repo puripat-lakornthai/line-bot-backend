@@ -1,7 +1,6 @@
 const db = require('../config/db');
 
 // ดึงรายการ ticket ทั้งหมดจากฐานข้อมูล พร้อมรองรับ filter และ pagination (ผ่าน offset + limit)
-// ✅ แก้เฉพาะฟังก์ชันนี้
 exports.getAllTicketsWithFilter = async (filters) => {
   const {
     offset,
@@ -11,11 +10,6 @@ exports.getAllTicketsWithFilter = async (filters) => {
     sort_by = 'updated_at',
     sort_order = 'DESC'
   } = filters;
-
-  // allow-list คอลัมน์ / ทิศทางกัน SQL injection
-  const COL_MAP = { updated_at: 'updated_at', created_at: 'created_at', status: 'status', priority: 'priority' };
-  const orderCol = COL_MAP[`${sort_by}`] || 'updated_at';
-  const orderDir = String(sort_order).toUpperCase() === 'ASC' ? 'ASC' : 'DESC';
 
   const where = [];
   const params = [];
@@ -34,9 +28,9 @@ exports.getAllTicketsWithFilter = async (filters) => {
     }
   }
 
-  const whereClause = where.length ? `WHERE ${where.join(' AND ')}` : '';
+  const whereClause = where.length > 0 ? `WHERE ${where.join(' AND ')}` : '';
 
-  // ✅ ใช้ subquery รวมชื่อผู้รับผิดชอบ เพื่อตัด GROUP BY ออก
+  // ใช้ subquery หลบ ONLY_FULL_GROUP_BY
   const ticketsSql = `
     SELECT
       t.ticket_id,
@@ -48,12 +42,12 @@ exports.getAllTicketsWithFilter = async (filters) => {
       (
         SELECT GROUP_CONCAT(u.full_name SEPARATOR ', ')
         FROM ticket_assignees ta
-        JOIN users u ON u.user_id = ta.staff_id
+        JOIN users u ON ta.staff_id = u.user_id
         WHERE ta.ticket_id = t.ticket_id
       ) AS assignee_fullname
     FROM tickets t
     ${whereClause}
-    ORDER BY \`${orderCol}\` ${orderDir}
+    ORDER BY t.${sort_by} ${String(sort_order).toUpperCase() === 'ASC' ? 'ASC' : 'DESC'}
     LIMIT ? OFFSET ?
   `;
 
@@ -63,15 +57,29 @@ exports.getAllTicketsWithFilter = async (filters) => {
     ${whereClause}
   `;
 
-  const [tickets] = await db.query(ticketsSql, [...params, Number(limit), Number(offset)]);
-  const [totalRows] = await db.query(totalSql, params);
+  // ✅ สำคัญ: บังคับเป็น Number กัน driver งอแง
+  const lim = Number(limit) || 10;
+  const off = Number(offset) || 0;
 
-  return {
-    tickets: Array.isArray(tickets) ? tickets : [],
-    total: totalRows?.[0]?.total || 0,
-  };
+  try {
+    const [ticketRows] = await db.query(ticketsSql, [...params, lim, off]);
+    const [totalRows]  = await db.query(totalSql, params);
+    return {
+      tickets: ticketRows,
+      total: totalRows?.[0]?.total || 0,
+    };
+  } catch (err) {
+    console.error('[SQL ERROR:getAllTicketsWithFilter]', {
+      code: err.code,
+      errno: err.errno,
+      sqlState: err.sqlState,
+      sqlMessage: err.sqlMessage,
+      sql: err.sql,
+      params: [...params, lim, off],
+    });
+    throw err; // ให้ controller ส่ง 500 ออกมา จะได้เห็นใน log ชัด ๆ
+  }
 };
-
 
 // ดึง ticket รายตัว (รวมผู้รับผิดชอบและแนบไฟล์)
 exports.getTicketById = async (ticketId) => {
