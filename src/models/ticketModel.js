@@ -1,10 +1,10 @@
 const db = require('../config/db');
 
 // ดึงรายการ ticket ทั้งหมดจากฐานข้อมูล พร้อมรองรับ filter และ pagination (ผ่าน offset + limit)
-// ดึงรายการ ticket ทั้งหมดจากฐานข้อมูล พร้อมรองรับ filter และ pagination
-// ✅ ปลอด ONLY_FULL_GROUP_BY (คัด ID ก่อนค่อยดึงรายละเอียด)
-// ✅ ใช้ whitelist กัน ORDER BY พัง/SQLi
-// ✅ db.query แบบ mysql2/promise (destructure เป็น [rows])
+// ✅ ดึงรายการ ticket ทั้งหมดจากฐานข้อมูล พร้อมรองรับ filter และ pagination
+// ✅ ปลอด ONLY_FULL_GROUP_BY
+// ✅ ใช้ whitelist ป้องกัน ORDER BY injection
+// ✅ เข้ากับ db.query() ของคุณที่คืน array ตรง ๆ
 exports.getAllTicketsWithFilter = async (filters) => {
   const {
     offset = 0,
@@ -17,8 +17,8 @@ exports.getAllTicketsWithFilter = async (filters) => {
 
   // --- 1) whitelist สำหรับ sort ---
   const SORT_COLUMNS = new Set(['updated_at', 'created_at', 'title', 'status', 'ticket_id']);
-  const SORT_ORDERS  = new Set(['ASC', 'DESC']);
-  const sortCol   = SORT_COLUMNS.has(String(sort_by))   ? String(sort_by)   : 'updated_at';
+  const SORT_ORDERS = new Set(['ASC', 'DESC']);
+  const sortCol = SORT_COLUMNS.has(String(sort_by)) ? String(sort_by) : 'updated_at';
   const sortOrder = SORT_ORDERS.has(String(sort_order)) ? String(sort_order) : 'DESC';
 
   // --- 2) เงื่อนไข filter ---
@@ -47,7 +47,7 @@ exports.getAllTicketsWithFilter = async (filters) => {
 
   const whereClause = where.length ? `WHERE ${where.join(' AND ')}` : '';
 
-  // --- 3) คัด ID ก่อน (แก้ปัญหา ONLY_FULL_GROUP_BY ชัวร์สุด) ---
+  // --- 3) คัด ID ก่อน (เลี่ยง ONLY_FULL_GROUP_BY) ---
   const idSql = `
     SELECT t.ticket_id
     FROM tickets t
@@ -56,7 +56,7 @@ exports.getAllTicketsWithFilter = async (filters) => {
     LIMIT ? OFFSET ?
   `;
   const idParams = [...params, Number(limit), Number(offset)];
-  const [idRows] = await db.query(idSql, idParams);
+  const idRows = await db.query(idSql, idParams); // ✅ ไม่ destructure
   const ticketIds = idRows.map(r => r.ticket_id);
 
   // --- 4) นับ total ตาม filter เดิม ---
@@ -65,14 +65,14 @@ exports.getAllTicketsWithFilter = async (filters) => {
     FROM tickets t
     ${whereClause}
   `;
-  const [totalRows] = await db.query(totalSql, params);
+  const totalRows = await db.query(totalSql, params); // ✅ ไม่ destructure
   const total = totalRows[0]?.total ?? 0;
 
   if (ticketIds.length === 0) {
     return { tickets: [], total };
   }
 
-  // --- 5) ดึงรายละเอียด tickets + ชื่อผู้รับผิดชอบ (aggregate แยกใน subquery) ---
+  // --- 5) ดึงรายละเอียด tickets + ชื่อผู้รับผิดชอบ ---
   const ticketsSql = `
     SELECT
       t.ticket_id,
@@ -80,7 +80,7 @@ exports.getAllTicketsWithFilter = async (filters) => {
       t.status,
       t.updated_at,
       t.created_at,
-      t.requester_name AS requester_fullname,     -- ✅ field จริงใน DB
+      t.requester_name AS requester_fullname,
       a.assignee_fullname
     FROM tickets t
     LEFT JOIN (
@@ -94,7 +94,7 @@ exports.getAllTicketsWithFilter = async (filters) => {
     WHERE t.ticket_id IN (${ticketIds.map(() => '?').join(',')})
     ORDER BY t.${sortCol} ${sortOrder}
   `;
-  const [ticketRows] = await db.query(ticketsSql, ticketIds);
+  const ticketRows = await db.query(ticketsSql, ticketIds); // ✅ ไม่ destructure
 
   return {
     tickets: ticketRows,
