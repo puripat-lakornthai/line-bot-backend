@@ -18,8 +18,8 @@ const handleTextMessage = async (event) => {
   const text = event.message.text.trim();
   const lower = text.toLowerCase();
 
-  // หากผู้ใช้พิมพ์ว่า "ดูงานของฉัน" แสดงรายการ ticket ที่เคยแจ้ง และเพราะมันไม่ต้องมี session มันดูได้ตลอด
-  if (lower === 'ดูงานของฉัน') {
+  // หากผู้ใช้พิมพ์ว่า "ดูปัญหาของฉัน" แสดงรายการ ticket ที่เคยแจ้ง และเพราะมันไม่ต้องมี session มันดูได้ตลอด
+  if (lower === 'ดูปัญหาของฉัน') {
     const list = await Ticket.getTicketsByLineUserId(uid);
     if (!list.length) return reply(event.replyToken, 'คุณยังไม่มีงานที่แจ้งเข้ามา');
     const info = list.map(t => `#${t.ticket_id} - ${t.title} (${t.status})`).join('\n');
@@ -272,7 +272,7 @@ const handleTextMessage = async (event) => {
       });
       
       return reply(event.replyToken,
-        `✅ สร้าง Ticket แล้ว!\nหมายเลข: #${ticketId}\nขอบคุณที่แจ้งปัญหา 🙏\n\nพิมพ์ "ดูงานของฉัน" เพื่อตรวจสอบสถานะ`
+        `✅ สร้าง Ticket แล้ว!\nหมายเลข: #${ticketId}\nขอบคุณที่แจ้งปัญหา 🙏\n\nพิมพ์ "ดูปัญหาของฉัน" เพื่อตรวจสอบสถานะ`
       );
     }
   }
