@@ -1,4 +1,4 @@
-// server/src/handlers/handleTextMessage.js
+// server/src/line/handlers/handleTextMessage.js
 
 // handleTextMessage.js
 // ใช้จัดการข้อความประเภท text ที่ส่งมาจากผู้ใช้ LINE

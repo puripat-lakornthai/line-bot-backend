@@ -1,7 +1,7 @@
+// server/src/line/utils/sessionUtils.js
 const sessionStore = require('../services/sessionService');
-const { reply } = require('./lineClient');
 
-const ACK_COOLDOWN_MS = 5000;
+const ACK_COOLDOWN_MS = 5000; // 5 วินาที
 
 // เพิ่มตัวนับการกรอกผิดใน session
 const increaseRetry = async (uid, sess) => {
@@ -10,24 +10,28 @@ const increaseRetry = async (uid, sess) => {
   return retry;
 };
 
-// ตรวจสอบว่าเกินเวลาคูลดาวน์หรือยัง
-const maybeReplyUploading = async (event, sess, tag, typeKey) => {
+// ตรวจสอบว่าเกินเวลาคูลดาวน์หรือยัง จะคูลดาวน์ 5 วินาที หลังจากตอบ “รับไฟล์แล้ว!”
+// ปรับให้ atomic ถ้าอนุญาต จะอัปเดต timestamp และ setSession ทันที
+const canReplyAcknowledge = async (uid, sess, typeKey) => {
   const now = Date.now();
 
+  // กัน null/undefined
+  sess.data = sess.data || {};
   sess.data.lastAckTsByType = sess.data.lastAckTsByType || {};
+
   const last = sess.data.lastAckTsByType[typeKey] || 0;
 
   if (now - last >= ACK_COOLDOWN_MS) {
     sess.data.lastAckTsByType[typeKey] = now;
-    await sessionStore.setSession(event.source.userId, sess);
-    await reply(event.replyToken, `${tag} รับไฟล์แล้ว! กำลังอัปโหลด…`);
-    return true;
+    await sessionStore.setSession(uid, sess); // persist ก่อนคืนค่า
+    return true; // อนุญาตให้ reply
   }
-  return false;
+  return false; // ยังไม่ถึงเวลา
 };
 
 // บันทึก metadata ของไฟล์ลงใน session หลังโหลด media สำเร็จ
 const saveToSession = async (uid, sess, meta) => {
+  sess.data = sess.data || {};
   sess.data.pending_files = sess.data.pending_files || [];
   sess.data.pending_files.push(meta);
   await sessionStore.setSession(uid, sess);
@@ -35,6 +39,6 @@ const saveToSession = async (uid, sess, meta) => {
 
 module.exports = {
   increaseRetry,
-  maybeReplyUploading,
+  canReplyAcknowledge,
   saveToSession,
 };

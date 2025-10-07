@@ -1,11 +1,11 @@
-// server/src/handlers/mediaHandler.js
+// server/src/line/handlers/mediaHandler.js
 
 // mediaHandler.js สำหรับจัดการข้อความประเภทสื่อจากผู้ใช้ LINE (ภาพ / ไฟล์ / วิดีโอ)
 
 const { downloadLineMedia, deleteTempFiles } = require('../services/mediaService');
-const { maybeReplyUploading, saveToSession } = require('../utils/sessionUtils');
+const { canReplyAcknowledge, saveToSession } = require('../utils/sessionUtils');
 const sessionStore = require('../services/sessionService');
-const { pushDone } = require('../utils/lineClient');
+const { pushDone, reply } = require('../utils/lineClient');
 
 // ฟังก์ชันสร้าง handler สำหรับสื่อแต่ละประเภท เช่น ภาพ / ไฟล์ / วิดีโอ
 // tag      : ใช้แสดงไอคอน เช่น '📷'
@@ -18,8 +18,12 @@ const makeMediaHandler = (tag, kindTH, typeKey) => async (event) => {
   let sess = await sessionStore.getSession(uid);
   if (!sess || sess.step !== 'wait_image') return;
 
-  // ป้องกันการตอบข้อความซ้ำกรณีส่งไฟล์รัว ๆ
-  const didReply = await maybeReplyUploading(event, sess, tag, typeKey);
+  // ป้องกันการตอบข้อความซ้ำกรณีส่งไฟล์รัวๆ จะคูลดาวน์ 5 วินาที หลังจากตอบ “รับไฟล์แล้ว!”
+  // ให้ util เป็นคน persist คูลดาวน์เอง (atomic)
+  const allowReply = await canReplyAcknowledge(uid, sess, typeKey);
+  if (allowReply) {
+    await reply(event.replyToken, `${tag} รับไฟล์แล้ว! กำลังอัปโหลด…`);
+  }
 
   // async IIFE เพื่อให้ error ดักได้แยกจาก flow หลัก
   (async () => {
@@ -42,8 +46,8 @@ const makeMediaHandler = (tag, kindTH, typeKey) => async (event) => {
       // บันทึก metadata ของไฟล์ลงใน session (ไม่เก็บ buffer จริง)
       await saveToSession(uid, latest, { ...meta, type: kindTH });
 
-      // ถ้าตอบไปแล้วว่า "รับภาพแล้ว!" ก่อนหน้า → แจ้งผลการบันทึก
-      if (didReply) await pushDone(uid, `✅ บันทึก${kindTH}เรียบร้อยแล้ว!`);
+      // ถ้าตอบไปแล้วว่า "รับไฟล์แล้ว!" ก่อนหน้าแล้วแจ้งผลการบันทึก
+      if (allowReply) await pushDone(uid, `✅ บันทึก${kindTH}เรียบร้อยแล้ว!`);
     } catch (e) {
       const msg = e.message.includes('ไฟล์ของคุณมีขนาด')
         ? `${e.message}\nกรุณาส่ง${kindTH}ที่เล็กกว่านี้`
