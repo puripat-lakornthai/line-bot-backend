@@ -7,20 +7,20 @@ const {
   handleVideoMessage
 } = require('../services/lineMessageService');
 
-const { lineMessagingApiConfig } = require('../config/lineConfig');
-const line = require('@line/bot-sdk');
+// const { lineMessagingApiConfig } = require('../config/lineConfig');
+// const line = require('@line/bot-sdk');
 
-// Middleware สำหรับตรวจสอบ LINE Signature
-exports.validateLineSignatureMiddleware = (req, res, next) => {
-  const signature = req.headers['x-line-signature'];
-  if (!signature || !req.rawBody || !lineMessagingApiConfig.channelSecret) {
-    return res.status(400).send('Missing signature or rawBody');
-  }
+// // Middleware สำหรับตรวจสอบ LINE Signature
+// exports.validateLineSignatureMiddleware = (req, res, next) => {
+//   const signature = req.headers['x-line-signature'];
+//   if (!signature || !req.rawBody || !lineMessagingApiConfig.channelSecret) {
+//     return res.status(400).send('Missing signature or rawBody');
+//   }
 
-  const isValid = line.validateSignature(req.rawBody, lineMessagingApiConfig.channelSecret, signature);
-  if (!isValid) return res.status(401).send('Invalid signature');
-  next();
-};
+//   const isValid = line.validateSignature(req.rawBody, lineMessagingApiConfig.channelSecret, signature);
+//   if (!isValid) return res.status(401).send('Invalid signature');
+//   next();
+// };
 
 // Handler หลักสำหรับ webhook
 exports.lineWebhookHandler = async (req, res) => {

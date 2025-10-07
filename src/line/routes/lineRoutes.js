@@ -6,10 +6,8 @@ const dotenv = require('dotenv');
 dotenv.config();
 
 // Controller ที่เกี่ยวกับ webhook จาก LINE
-const {
-  lineWebhookHandler,
-  validateLineSignatureMiddleware
-} = require('../controller/lineWebhookController');
+const { lineWebhookHandler } = require('../controller/lineWebhookController');
+const validateLineSignatureMiddleware = require('../middleware/validateLineSignatureMiddleware');
 
 // Controller สำหรับแจ้งเตือน LINE (ฝั่ง admin ลบ ticket)
 const { notifyTicketDeleted } = require('../controller/lineNotifyController');
