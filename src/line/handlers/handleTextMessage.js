@@ -10,7 +10,7 @@ const User = require('../../models/userModel');
 const { reply } = require('../utils/lineClient');
 const { isSpammyText, isInvalidPhone, isInvalidName } = require('../utils/validators');
 const { moveTempToPermanent, deleteTempFiles } = require('../services/mediaService');
-const { increaseRetry } = require('../utils/sessionUtils');
+const { increaseRetry, checkAndRefreshTTL } = require('../utils/sessionUtils');
 
 // ป้ายสถานะของ Tickets
 const statusLabel = {
@@ -28,6 +28,8 @@ const handleTextMessage = async (event) => {
   const text = event.message.text.trim();
   const lower = text.toLowerCase();
 
+  await User.findOrCreateByLineId(uid);
+
   // หากผู้ใช้พิมพ์ว่า "ดูปัญหาของฉัน" แสดงรายการ ticket ที่เคยแจ้ง และเพราะมันไม่ต้องมี session มันดูได้ตลอด
   if (lower === 'ดูปัญหาของฉัน') {
     const list = await Ticket.getTicketsByLineUserId(uid);
@@ -37,8 +39,10 @@ const handleTextMessage = async (event) => {
   }
 
   /* ทำให้บอก user ว่า session หมดอายุ 1 ครั้งก่อน ถ้า user พิมพ์มาอีกครั้งให้ทักทายไป*/
-  // โหลด session ล่าสุดจาก store
-  let sess = await sessionStore.getSession(uid);
+  // โหลด session ล่าสุดจาก store + ตรวจ/ต่ออายุ TTL
+  const rawSess = await sessionStore.getSession(uid);
+  const { session: refreshedSess, expired } = await checkAndRefreshTTL(uid, rawSess);
+  let sess = refreshedSess;
 
   // หากผู้ใช้พิมพ์ว่า "ยกเลิก" ล้าง session และลบไฟล์ temp
   if (lower === 'ยกเลิก') {
@@ -48,8 +52,8 @@ const handleTextMessage = async (event) => {
       await deleteTempFiles(sess); // ลบไฟล์ที่ค้างอยู่ (ยังไม่ได้แนบ) และลบไฟล์ให้จบก่อน แล้วค่อยตอบกลับ
     }
 
-    // ตั้ง session เป็น idle และบันทึกว่าเตือนไปแล้ว (warned = true)
-    await sessionStore.setSession(uid, {
+    // ตั้ง session เป็น idle และบันทึกว่าเตือนไปแล้ว (warned = true) พร้อมต่อ TTL
+    await checkAndRefreshTTL(uid, {
       step: 'idle',
       data: { warned: true },
       retryCount: 0,
@@ -59,10 +63,10 @@ const handleTextMessage = async (event) => {
   }
 
   // ตรวจว่า session หมดอายุ (หรือยังไม่มี)
-  if (!sess || !sess.step) {
-    // ถ้าผู้ใช้เริ่มใหม่ด้วย "แจ้งปัญหา"
+  if (expired || !sess || !sess.step) {
+    // เริ่มใหม่ด้วย "แจ้งปัญหา"
     if (lower === 'แจ้งปัญหา') {
-      await sessionStore.setSession(uid, {
+      await checkAndRefreshTTL(uid, {
         step: 'ask_name',
         data: { lastAckTs: 0 },
         retryCount: 0,
@@ -70,32 +74,28 @@ const handleTextMessage = async (event) => {
       return reply(event.replyToken, 'กรุณาระบุชื่อของคุณ');
     }
 
-    // ยังไม่เคยมี session เลย → ทักทาย
-    if (!sess) {
-      await sessionStore.setSession(uid, {
-        step: 'idle',
-        data: { warned: true },
-        retryCount: 0,
-      });
-      return reply(event.replyToken, 'ยินดีต้อนรับ! หากต้องการแจ้งปัญหา กรุณาพิมพ์ "แจ้งปัญหา"');
-    }
+    // ยังไม่เคยมี หรือเพิ่งหมดอายุ ⇒ เตือนครั้งแรกเท่านั้น
+    const alreadyWarned = Boolean(sess?.data?.warned);
 
-    // มี session แต่ไม่มี step (session หมดอายุจริง) → เตือนทุกครั้ง
-    await sessionStore.setSession(uid, {
+    await checkAndRefreshTTL(uid, {
       step: 'idle',
       data: { warned: true },
       retryCount: 0,
     });
-    return reply(
-      event.replyToken,
-      'เซสชันของคุณหมดอายุระหว่างการแจ้งปัญหา กรุณาพิมพ์ "แจ้งปัญหา" เพื่อเริ่มต้นใหม่'
-    );
+
+    if (!alreadyWarned) {
+      return reply(
+        event.replyToken,
+        'เซสชันของคุณหมดอายุระหว่างการแจ้งปัญหา กรุณาพิมพ์ "แจ้งปัญหา" เพื่อเริ่มต้นใหม่'
+      );
+    }
+    return reply(event.replyToken, 'ยินดีต้อนรับ! หากต้องการแจ้งปัญหา กรุณาพิมพ์ "แจ้งปัญหา"');
   }
 
   // หาก session ยังไม่หมดอายุ และอยู่ในสถานะ idle (ยังไม่เริ่ม)
   if (sess.step === 'idle') {
     if (lower === 'แจ้งปัญหา') {
-      await sessionStore.setSession(uid, {
+      await checkAndRefreshTTL(uid, {
         step: 'ask_name',
         data: { lastAckTs: 0 },
         retryCount: 0,
@@ -131,10 +131,10 @@ const handleTextMessage = async (event) => {
       }
 
       // ดึง user_id จาก database หรือลงทะเบียนใหม่หากยังไม่มี
-      const requesterId = await User.findOrCreateByLineId(uid, `User_${uid.substring(0,6)}`);
+      const requesterId = await User.findOrCreateByLineId(uid);
 
       // บันทึกชื่อ และไปยังขั้นตอนขอเบอร์โทร
-      await sessionStore.setSession(uid, {
+      await checkAndRefreshTTL(uid, {
         step: 'ask_phone',
         data: { ...sess.data, name: text, user_id: requesterId  },
         retryCount: 0,
@@ -153,7 +153,7 @@ const handleTextMessage = async (event) => {
       }
 
       // บันทึกเบอร์โทร และไปยังขั้นตอนขอรายละเอียดปัญหา
-      await sessionStore.setSession(uid, {
+      await checkAndRefreshTTL(uid, {
         step: 'ask_detail',
         data: { ...sess.data, phone: text },
         retryCount: 0,
@@ -172,7 +172,7 @@ const handleTextMessage = async (event) => {
       }
 
       // บันทึกรายละเอียด และไปยังขั้นตอนขอระดับความสำคัญ
-      await sessionStore.setSession(uid, {
+      await checkAndRefreshTTL(uid, {
         step: 'ask_priority',
         data: { ...sess.data, detail: text },
         retryCount: 0,
@@ -198,7 +198,7 @@ const handleTextMessage = async (event) => {
        // ใช้ user_id ที่บันทึกไว้ตอนถามชื่อ (ถ้าไม่มีมันจะ fallback )
       const requesterId =
         sess.data.user_id ||
-        await User.findOrCreateByLineId(uid, sess.data.name || `User_${uid.substring(0,6)}`);
+        await User.findOrCreateByLineId(uid);
 
       // สร้าง ticket ล่วงหน้า พร้อมเก็บ ticket_id สำหรับใช้ตั้งชื่อไฟล์
       const { insertId: ticketId } = await Ticket.createTicket({
@@ -212,7 +212,7 @@ const handleTextMessage = async (event) => {
       });
 
       // อัปเดต session ด้วย ticket_id และ user_id
-      await sessionStore.setSession(uid, {
+      await checkAndRefreshTTL(uid, {
         step: 'wait_image',
         data: {
           ...sess.data,
@@ -238,7 +238,7 @@ const handleTextMessage = async (event) => {
 
       // ใช้ user_id จาก session (ถูกตั้งไว้ตอนขั้น ask_priority)
       // หากไม่มี ให้ fallback ไปเรียก findOrCreateByLineId เพื่อสร้าง user_id ใหม่
-      const requesterId = sess.data.user_id || await User.findOrCreateByLineId(uid, sess.data.name);
+      const requesterId = sess.data.user_id || await User.findOrCreateByLineId(uid);
 
       // ใช้ ticket_id จาก session (ถูกสร้างไว้ตอนขั้น ask_priority) ถ้ายังไม่มีจะ fallback ไปสร้างใหม่ด้านล่าง
       let ticketId = sess.data.ticket_id;
@@ -288,12 +288,12 @@ const handleTextMessage = async (event) => {
       await sessionStore.clearSession(uid);
 
       // ตั้ง session ใหม่เป็น idle + บอกว่าเตือนไปแล้ว (จะได้ไม่โดนเตือนว่า session หมดอายุ)
-      await sessionStore.setSession(uid, {
+      await checkAndRefreshTTL(uid, {
         step: 'idle',
         data: { warned: true },
         retryCount: 0,
       });
-      
+
       return reply(event.replyToken,
         `✅ สร้าง Ticket แล้ว!\nหมายเลข: #${ticketId}\nขอบคุณที่แจ้งปัญหา 🙏\n\nพิมพ์ "ดูปัญหาของฉัน" เพื่อตรวจสอบสถานะ`
       );
