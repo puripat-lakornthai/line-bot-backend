@@ -60,8 +60,8 @@ const handleTextMessage = async (event) => {
 
   // ตรวจว่า session หมดอายุ (หรือยังไม่มี)
   if (!sess || !sess.step) {
+    // ถ้าผู้ใช้เริ่มใหม่ด้วย "แจ้งปัญหา"
     if (lower === 'แจ้งปัญหา') {
-      // ถ้าเริ่มใหม่ด้วย "แจ้งปัญหา"
       await sessionStore.setSession(uid, {
         step: 'ask_name',
         data: { lastAckTs: 0 },
@@ -70,18 +70,26 @@ const handleTextMessage = async (event) => {
       return reply(event.replyToken, 'กรุณาระบุชื่อของคุณ');
     }
 
-    // ถ้ายังไม่ได้เคยแจ้งว่า session หมดอายุเตือนครั้งเดียว
-    if (!sess?.data?.warned) {
+    // ยังไม่เคยมี session เลย → ทักทาย
+    if (!sess) {
       await sessionStore.setSession(uid, {
         step: 'idle',
-        data: { warned: true }, // บันทึกว่าเตือนไปแล้ว
+        data: { warned: true },
         retryCount: 0,
       });
-      return reply(event.replyToken, 'เซสชันของคุณหมดอายุระหว่างการแจ้งปัญหา กรุณาพิมพ์ "แจ้งปัญหา" เพื่อเริ่มต้นใหม่');
+      return reply(event.replyToken, 'ยินดีต้อนรับ! หากต้องการแจ้งปัญหา กรุณาพิมพ์ "แจ้งปัญหา"');
     }
 
-    // ถ้าเตือนไปแล้วทักทายเฉยๆ
-    return reply(event.replyToken, 'ยินดีต้อนรับ! หากต้องการแจ้งปัญหา กรุณาพิมพ์ "แจ้งปัญหา"');
+    // มี session แต่ไม่มี step (session หมดอายุจริง) → เตือนทุกครั้ง
+    await sessionStore.setSession(uid, {
+      step: 'idle',
+      data: { warned: true },
+      retryCount: 0,
+    });
+    return reply(
+      event.replyToken,
+      'เซสชันของคุณหมดอายุระหว่างการแจ้งปัญหา กรุณาพิมพ์ "แจ้งปัญหา" เพื่อเริ่มต้นใหม่'
+    );
   }
 
   // หาก session ยังไม่หมดอายุ และอยู่ในสถานะ idle (ยังไม่เริ่ม)
@@ -115,17 +123,20 @@ const handleTextMessage = async (event) => {
       // ตรวจสอบความถูกต้องของชื่อ
       if (text.length < 2 || isInvalidName(text)) {
         if (await increaseRetry(uid, sess) >= 5) {
-          // หากพิมพ์ผิดเกิน 5 ครั้ง → เคลียร์ session
+          // หากพิมพ์ผิดเกิน 5 ครั้ง จะเคลียร์ session
           await sessionStore.clearSession(uid);
           return reply(event.replyToken, 'ลองใหม่อีกครั้ง');
         }
         return reply(event.replyToken, 'กรุณาระบุชื่ออีกครั้ง');
       }
 
+      // ดึง user_id จาก database หรือลงทะเบียนใหม่หากยังไม่มี
+      const requesterId = await User.findOrCreateByLineId(uid, `User_${uid.substring(0,6)}`);
+
       // บันทึกชื่อ และไปยังขั้นตอนขอเบอร์โทร
       await sessionStore.setSession(uid, {
         step: 'ask_phone',
-        data: { ...sess.data, name: text },
+        data: { ...sess.data, name: text, user_id: requesterId  },
         retryCount: 0,
       });
       return reply(event.replyToken, 'กรุณาระบุเบอร์โทรศัพท์');
@@ -184,8 +195,10 @@ const handleTextMessage = async (event) => {
         return reply(event.replyToken, 'โปรดพิมพ์เลข 1, 2 หรือ 3 เท่านั้น:');
       }
 
-      // ดึง user_id จาก database หรือลงทะเบียนใหม่หากยังไม่มี
-      const requesterId = await User.findOrCreateByLineId(uid, sess.data.name);
+       // ใช้ user_id ที่บันทึกไว้ตอนถามชื่อ (ถ้าไม่มีมันจะ fallback )
+      const requesterId =
+        sess.data.user_id ||
+        await User.findOrCreateByLineId(uid, sess.data.name || `User_${uid.substring(0,6)}`);
 
       // สร้าง ticket ล่วงหน้า พร้อมเก็บ ticket_id สำหรับใช้ตั้งชื่อไฟล์
       const { insertId: ticketId } = await Ticket.createTicket({
@@ -252,7 +265,7 @@ const handleTextMessage = async (event) => {
       if (lower === 'เสร็จแล้ว' && pendingFiles.length > 0) {
         for (const m of pendingFiles) {
           // ย้ายไฟล์จาก temp ไปยังโฟลเดอร์ถาวรของ ticket
-          const perm = moveTempToPermanent(m, ticketId);
+          const perm = await moveTempToPermanent(m, ticketId);
 
           // บันทึกไฟล์แนบลงใน database
           await Ticket.addAttachments(
