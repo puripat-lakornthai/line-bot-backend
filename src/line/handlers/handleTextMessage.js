@@ -33,7 +33,7 @@ const handleTextMessage = async (event) => {
     const list = await Ticket.getTicketsByLineUserId(uid);
     if (!list.length) return reply(event.replyToken, 'คุณยังไม่มีงานที่แจ้งเข้ามา');
     const info = list.map(t => `#${t.ticket_id} - ${t.title} (${statusLabel[t.status] || t.status})`).join('\n');
-    return reply(event.replyToken, `คุณมีทั้งหมด ${list.length} งาน:\n\n${info}`);
+    return reply(event.replyToken, `คุณมีทั้งหมด ${list.length} งาน\n\n${info}`);
   }
 
   /* ทำให้บอก user ว่า session หมดอายุ 1 ครั้งก่อน ถ้า user พิมพ์มาอีกครั้งให้ทักทายไป*/
