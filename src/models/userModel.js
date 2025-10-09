@@ -182,19 +182,22 @@ exports.deleteUserByAdmin = async (id) => {
 };
 
 // ฟังก์ชันสำหรับค้นหาผู้ใช้จาก line_user_id หากไม่มีให้สร้างใหม่ (line)
-exports.findOrCreateByLineId = async (lineUserId) => {
-  const [rows] = await db.query(
-    'SELECT user_id FROM users WHERE line_user_id = ? LIMIT 1', [lineUserId]
-  );
-  if (rows.length) return rows[0].user_id;
+exports.findOrCreateByLineId = async (lineUserId, fullName = null) => {
+  // ค้นหา user_id จากตาราง users โดยใช้ line_user_id
+  const result = await db.query('SELECT user_id FROM users WHERE line_user_id = ?', [lineUserId]);
 
-  const [ins] = await db.query(
-    "INSERT INTO users (role, line_user_id, password_hash) VALUES ('requester', ?, '')",
-    [lineUserId]
+  // ถ้าพบข้อมูลผู้ใช้ ให้คืนค่า user_id ที่เจอ
+  if (result.length > 0) return result[0].user_id;
+
+  // ถ้าไม่พบ ให้เพิ่มผู้ใช้ใหม่โดยใช้ fullName (หรือ 'unknown' ถ้าไม่มี)
+  const insert = await db.query(
+    'INSERT INTO users (role, line_user_id) VALUES (?, ?)',
+    ['requester', lineUserId]
   );
-  return ins.insertId;
+
+  // คืนค่า user_id ที่เพิ่มใหม่ (line)
+  return insert.insertId;
 };
-
 
 exports.getStaff = async () => {
   try {

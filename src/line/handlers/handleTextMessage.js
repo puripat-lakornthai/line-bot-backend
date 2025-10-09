@@ -195,10 +195,8 @@ const handleTextMessage = async (event) => {
         return reply(event.replyToken, 'โปรดพิมพ์เลข 1, 2 หรือ 3 เท่านั้น:');
       }
 
-       // ใช้ user_id ที่บันทึกไว้ตอนถามชื่อ (ถ้าไม่มีมันจะ fallback )
-      const requesterId =
-        sess.data.user_id ||
-        await User.findOrCreateByLineId(uid);
+      // ดึง user_id จาก database หรือลงทะเบียนใหม่หากยังไม่มี
+      const requesterId = await User.findOrCreateByLineId(uid);
 
       // สร้าง ticket ล่วงหน้า พร้อมเก็บ ticket_id สำหรับใช้ตั้งชื่อไฟล์
       const { insertId: ticketId } = await Ticket.createTicket({
