@@ -182,24 +182,17 @@ exports.deleteUserByAdmin = async (id) => {
 };
 
 // ฟังก์ชันสำหรับค้นหาผู้ใช้จาก line_user_id หากไม่มีให้สร้างใหม่ (line)
-// ต้องมี UNIQUE KEY (line_user_id) ในตาราง users ก่อน
-// และ password_hash ควรเป็น NOT NULL DEFAULT ''
-exports.findOrCreateByLineId = async (lineUserId, fullName = null) => {
-  const safeName =
-    (fullName && fullName.trim()) || `User_${lineUserId.slice(0, 6)}`;
-
-  // ตัวเดียวจบ: ถ้าไม่เจอ → แทรกใหม่, ถ้าเจอแล้ว → ไม่แทรกซ้ำ
-  // ใช้ LAST_INSERT_ID(user_id) เพื่อให้ res.insertId คืนค่า user_id เดิมได้
-  const [res] = await db.query(
-    `INSERT INTO users (line_user_id, role, password_hash, full_name)
-     VALUES (?, 'requester', '', ?)
-     ON DUPLICATE KEY UPDATE
-       full_name = IF(full_name IS NULL OR full_name = '' OR full_name LIKE 'User_%',VALUES(full_name), full_name),
-       user_id = LAST_INSERT_ID(user_id)`,
-    [lineUserId, safeName]
+exports.findOrCreateByLineId = async (lineUserId) => {
+  const [rows] = await db.query(
+    'SELECT user_id FROM users WHERE line_user_id = ? LIMIT 1', [lineUserId]
   );
+  if (rows.length) return rows[0].user_id;
 
-  return res.insertId; // ได้ทั้งกรณี insert ใหม่ หรือมีอยู่แล้ว
+  const [ins] = await db.query(
+    "INSERT INTO users (role, line_user_id, password_hash) VALUES ('requester', ?, '')",
+    [lineUserId]
+  );
+  return ins.insertId;
 };
 
 
