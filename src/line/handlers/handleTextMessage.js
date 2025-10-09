@@ -12,6 +12,16 @@ const { isSpammyText, isInvalidPhone, isInvalidName } = require('../utils/valida
 const { moveTempToPermanent, deleteTempFiles } = require('../services/mediaService');
 const { increaseRetry } = require('../utils/sessionUtils');
 
+// ป้ายสถานะของ Tickets
+const statusLabel = {
+  new: 'ใหม่',
+  assigned: 'มอบหมายแล้ว',
+  in_progress: 'กำลังดำเนินการ',
+  pending: 'รอข้อมูลเพิ่มเติม',
+  resolved: 'แก้ไขแล้ว',
+  closed: 'ปิดงานแล้ว',
+};
+
 // ฟังก์ชันหลักสำหรับจัดการข้อความที่เป็นข้อความตัวอักษรจากผู้ใช้
 const handleTextMessage = async (event) => {
   const uid = event.source.userId;
@@ -22,7 +32,7 @@ const handleTextMessage = async (event) => {
   if (lower === 'ดูปัญหาของฉัน') {
     const list = await Ticket.getTicketsByLineUserId(uid);
     if (!list.length) return reply(event.replyToken, 'คุณยังไม่มีงานที่แจ้งเข้ามา');
-    const info = list.map(t => `#${t.ticket_id} - ${t.title} (${t.status})`).join('\n');
+    const info = list.map(t => `#${t.ticket_id} - ${t.title} (${statusLabel[t.status] || t.status})`).join('\n');
     return reply(event.replyToken, `คุณมีทั้งหมด ${list.length} งาน:\n\n${info}`);
   }
 
@@ -30,12 +40,12 @@ const handleTextMessage = async (event) => {
   // โหลด session ล่าสุดจาก store
   let sess = await sessionStore.getSession(uid);
 
-  // หากผู้ใช้พิมพ์ว่า "ยกเลิก" → ล้าง session และลบไฟล์ temp
+  // หากผู้ใช้พิมพ์ว่า "ยกเลิก" ล้าง session และลบไฟล์ temp
   if (lower === 'ยกเลิก') {
     if (sess) {
       sess.cancelled = true; // ติดธงว่าเป็นการยกเลิก
       await sessionStore.setSession(uid, sess); // เซฟสถานะก่อนล้าง
-      deleteTempFiles(sess); // ลบไฟล์ที่ค้างอยู่ (ยังไม่ได้แนบ)
+      await deleteTempFiles(sess); // ลบไฟล์ที่ค้างอยู่ (ยังไม่ได้แนบ) และลบไฟล์ให้จบก่อน แล้วค่อยตอบกลับ
     }
 
     // ตั้ง session เป็น idle และบันทึกว่าเตือนไปแล้ว (warned = true)
