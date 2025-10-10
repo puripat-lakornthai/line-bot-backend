@@ -35,7 +35,7 @@ const handleTextMessage = async (event) => {
     const list = await Ticket.getTicketsByLineUserId(uid);
     if (!list.length) return reply(event.replyToken, 'คุณยังไม่มีงานที่แจ้งเข้ามา');
     const info = list.map(t => `#${t.ticket_id} - ${t.title} (${statusLabel[t.status] || t.status})`).join('\n');
-    return reply(event.replyToken, `คุณมีทั้งหมด ${list.length} งาน\n\n${info}`);
+    return reply(event.replyToken, `คุณมีปัญหาที่แจ้งทั้งหมด ${list.length} งาน\n\n${info}`);
   }
 
   /* โหลด session ล่าสุดจาก store (ยังไม่ต่อ TTL) */
