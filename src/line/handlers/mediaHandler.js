@@ -47,7 +47,7 @@ const makeMediaHandler = (tag, kindTH, typeKey) => async (event) => {
       await saveToSession(uid, latest, { ...meta, type: kindTH });
 
       // ถ้าตอบไปแล้วว่า "รับไฟล์แล้ว!" ก่อนหน้าแล้วแจ้งผลการบันทึก
-      if (allowReply) await pushDone(uid, `✅ บันทึก${kindTH}เรียบร้อยแล้ว!`);
+      if (allowReply) await pushDone(uid, `✅ บันทึก${kindTH}เรียบร้อยแล้ว!\n\nหากไม่มีรูปหรือไฟล์เพิ่มเติม พิมพ์ "เสร็จแล้ว" เพื่อสร้าง Ticket\nหากต้องการแนบเพิ่ม ส่งไฟล์ต่อได้เลย`);
     } catch (e) {
       const msg = e.message.includes('ไฟล์ของคุณมีขนาด')
         ? `${e.message}\nกรุณาส่ง${kindTH}ที่เล็กกว่านี้`
