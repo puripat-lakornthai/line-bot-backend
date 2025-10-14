@@ -13,40 +13,35 @@ const expireTimers = new Map();
 
 // ตั้ง/รีเซ็ต timer เพื่อ push แจ้งหมดอายุอัตโนมัติ
 const armExpirePush = (uid, sess) => {
+  // ข้ามทันทีถ้าไม่มี session หรืออยู่สถานะ idle (ไม่ได้ทำฟอร์มอยู่)
+  if (!sess || sess.step === 'idle') return;
+
+  // เคลียร์ timer เดิมของ user นี้ก่อนตั้งใหม่ (กันซ้อน/กันยิงซ้ำ)
   if (expireTimers.has(uid)) {
     clearTimeout(expireTimers.get(uid));
     expireTimers.delete(uid);
   }
 
+  // เวลาที่เหลือก่อนหมดอายุ (มิลลิวินาที)
   const msLeft = (sess?.expiresAt || 0) - Date.now();
-  if (!msLeft || msLeft <= 0) {
-    console.log('[TTL] skip arm: no msLeft', { uid, msLeft, expiresAt: sess?.expiresAt });
-    return;
-  }
+  if (!msLeft || msLeft <= 0) return; // ถ้าไม่เหลือเวลาแล้ว ไม่ต้องตั้ง timer
 
-  console.log('[TTL] arm timer', { uid, msLeft });
-
+  // ตั้ง timer ให้ทำงานหลังครบกำหนด + เผื่อ 50ms หรือ 0.05 วินาที กันขอบเวลา
   const t = setTimeout(async () => {
     try {
-      console.log('[TTL] timer fired', { uid });
-
+      // ดึง session ล่าสุดมาก่อน ป้องกันข้อมูลเก่า
       const latest = await sessionStore.getSession(uid);
-      if (!latest) {
-        console.log('[TTL] no session on fire -> stop', { uid });
-        return;
-      }
+      if (!latest) return; // ถ้าไม่มีแล้วก็จบ
 
-      // 🔧 จุดแก้: ถ้า expiresAt หาย ให้ถือว่า "หมดอายุแล้ว"
+      // ถือว่าหมดอายุถ้าไม่มี expiresAt หรือเวลาปัจจุบันเกิน
       const isExpired = !latest.expiresAt || Date.now() > latest.expiresAt;
+
+      // กันการแจ้งซ้ำในรอบเดียวกันด้วย flag นี้
       const alreadyNotified = Boolean(latest?.data?.expiredNotified);
 
-      if (isExpired && !alreadyNotified) {
-        console.log('[TTL] expired & not-notified -> push', {
-          uid,
-          expiresAt: latest.expiresAt,
-        });
-
-        // mark ว่าเตือนไปแล้ว + seed เป็น idle + ต่อ TTL ใหม่
+      // push เฉพาะกรณี: หมดอายุจริง + ยังไม่เคยเตือน + ยังอยู่ขั้นทำฟอร์ม (ไม่ใช่ idle)
+      if (isExpired && !alreadyNotified && latest.step !== 'idle') {
+        // seed กลับไป idle พร้อม mark ว่ามีการเตือนแล้ว และยืด TTL รอบใหม่
         const seeded = {
           ...latest,
           step: 'idle',
@@ -56,31 +51,28 @@ const armExpirePush = (uid, sess) => {
         };
         await sessionStore.setSession(uid, seeded);
 
+        // ส่ง push แจ้งผู้ใช้ (ไม่มี replyToken แล้วเพราะอยู่นอก event เดิม)
         try {
           await pushDone(
             uid,
             'เซสชันของคุณหมดอายุระหว่างการแจ้งปัญหา กรุณาพิมพ์ "แจ้งปัญหา" เพื่อเริ่มต้นใหม่'
           );
-          console.log('[TTL] push sent', { uid });
+          console.log('[TTL] push sent:', { uid });
         } catch (e) {
           console.error('[TTL] push error:', e?.message || e);
         }
 
-        // ตั้ง timer รอบใหม่
-        armExpirePush(uid, seeded);
-      } else {
-        console.log('[TTL] not expired or already notified', {
-          uid,
-          isExpired,
-          alreadyNotified,
-          expiresAt: latest.expiresAt,
-        });
+        // ตอนนี้สถานะเป็น idle แล้ว ไม่ต้อง arm timer ต่อที่นี่
+        return;
       }
+
+      // หมดอายุขณะ idle หรือเคยแจ้งไปแล้วจะไม่ทำอะไร
     } catch (e) {
       console.error('[TTL] timer handler error:', e?.message || e);
     }
   }, msLeft + 50);
 
+  // เก็บตัวอ้างอิง timer ไว้ใน Map เพื่อให้เคลียร์ได้ตอนมีอัปเดตใหม่
   expireTimers.set(uid, t);
 };
 
@@ -91,7 +83,7 @@ const armExpirePush = (uid, sess) => {
  * - ถ้ายังไม่หมด -> ต่อ TTL แล้วคืน session ใหม่
  */
 const checkAndRefreshTTL = async (uid, sess) => {
-  // ไม่มี session -> seed เป็น idle + TTL
+  // ไม่มี session -> seed เป็น idle + TTL (ไม่ arm timer ตอน idle)
   if (!sess) {
     const seeded = {
       step: 'idle',
@@ -100,7 +92,7 @@ const checkAndRefreshTTL = async (uid, sess) => {
       expiresAt: Date.now() + EXPIRE_MS,
     };
     await sessionStore.setSession(uid, seeded);
-    armExpirePush(uid, seeded);
+    // ไม่ arm ตอน idle
     return { session: seeded, expired: false, wasWarned: false };
   }
 
@@ -114,7 +106,7 @@ const checkAndRefreshTTL = async (uid, sess) => {
       expiresAt: Date.now() + EXPIRE_MS,
     };
     await sessionStore.setSession(uid, seeded);
-    armExpirePush(uid, seeded);
+    // กลับมา idle แล้ว ไม่ arm
     return {
       session: seeded,
       expired: true,
@@ -126,6 +118,7 @@ const checkAndRefreshTTL = async (uid, sess) => {
   // ต่ออายุ TTL ปกติ
   const next = { ...sess, expiresAt: Date.now() + EXPIRE_MS };
   await sessionStore.setSession(uid, next);
+  // arm เฉพาะกรณีที่กำลังอยู่ใน flow (ไม่ใช่ idle)
   armExpirePush(uid, next);
   return { session: next, expired: false, wasWarned: Boolean(sess?.data?.warned) };
 };
@@ -135,27 +128,24 @@ const increaseRetry = async (uid, sess) => {
   const retry = (sess.retryCount || 0) + 1;
   const next = { ...sess, retryCount: retry, expiresAt: Date.now() + EXPIRE_MS };
   await sessionStore.setSession(uid, next);
-  armExpirePush(uid, next);
+  armExpirePush(uid, next); // เฉพาะตอนกำลังทำ flow อยู่เท่านั้น (next.step ไม่ใช่ idle)
   return retry;
 };
 
 // ตรวจสอบว่าเกินเวลาคูลดาวน์หรือยัง จะคูลดาวน์ 5 วินาที หลังจากตอบ รับไฟล์แล้ว!
 const canReplyAcknowledge = async (uid, sess, typeKey) => {
   const now = Date.now();
-
-  // กัน null/undefined
   sess.data = sess.data || {};
   sess.data.lastAckTsByType = sess.data.lastAckTsByType || {};
-
   const last = sess.data.lastAckTsByType[typeKey] || 0;
 
   if (now - last >= ACK_COOLDOWN_MS) {
     sess.data.lastAckTsByType[typeKey] = now;
-    await sessionStore.setSession(uid, sess); // persist ก่อนคืนค่า
-    armExpirePush(uid, sess);
-    return true; // อนุญาตให้ reply
+    await sessionStore.setSession(uid, sess);
+    armExpirePush(uid, sess); // เฉพาะตอนกำลังทำ flow
+    return true;
   }
-  return false; // ยังไม่ถึงเวลา
+  return false;
 };
 
 // บันทึก metadata ของไฟล์ลงใน session หลังโหลด media สำเร็จ
@@ -165,7 +155,7 @@ const saveToSession = async (uid, sess, meta) => {
   sess.data.pending_files.push(meta);
   const next = { ...sess, expiresAt: Date.now() + EXPIRE_MS };
   await sessionStore.setSession(uid, next);
-  armExpirePush(uid, next);
+  armExpirePush(uid, next); // อยู่ในขั้นแนบไฟล์ arm ได้
 };
 
 module.exports = {

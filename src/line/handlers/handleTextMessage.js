@@ -1,5 +1,3 @@
-// server/src/line/handlers/handleTextMessage.js
-
 // handleTextMessage.js
 // ใช้จัดการข้อความประเภท text ที่ส่งมาจากผู้ใช้ LINE
 // ทำหน้าที่ควบคุม flow การแจ้งปัญหาแบบ step-by-step ผ่าน session
@@ -56,7 +54,7 @@ const handleTextMessage = async (event) => {
     // ตั้ง session เป็น idle และบันทึกว่าเตือนไปแล้ว (warned = true) พร้อมต่อ TTL
     await checkAndRefreshTTL(uid, {
       step: 'idle',
-      data: { ...(sess?.data || {}), warned: true, expiredNotified: true, expiredFlag: false }, // ← เปลี่ยนเป็น true
+      data: { ...(sess?.data || {}), warned: true, expiredNotified: true, expiredFlag: false }, // เปลี่ยนเป็น true กัน push ตอน idle
       retryCount: 0,
     });
 
@@ -250,7 +248,7 @@ const handleTextMessage = async (event) => {
       // ตั้ง session ใหม่เป็น idle + บอกว่าเตือนไปแล้ว (จะได้ไม่โดนเตือนว่า session หมดอายุ)
       await checkAndRefreshTTL(uid, {
         step: 'idle',
-        data: { ...(sess?.data || {}), warned: true, expiredNotified: true, expiredFlag: false }, // ← เปลี่ยนเป็น true
+        data: { ...(sess?.data || {}), warned: true, expiredNotified: true, expiredFlag: false }, // เปลี่ยนเป็น true กัน push ตอน idle
         retryCount: 0,
       });
 
