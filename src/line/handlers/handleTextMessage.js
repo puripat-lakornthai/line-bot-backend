@@ -158,24 +158,13 @@ const handleTextMessage = async (event) => {
       // ดึง user_id จาก database หรือลงทะเบียนใหม่หากยังไม่มี
       const requesterId = await User.findOrCreateByLineId(uid);
 
-      // สร้าง ticket ล่วงหน้า พร้อมเก็บ ticket_id สำหรับใช้ตั้งชื่อไฟล์
-      const { insertId: ticketId } = await Ticket.createTicket({
-        title: `แจ้งปัญหาจาก ${sess.data.name}`,
-        description: sess.data.detail,
-        requester_name: sess.data.name,
-        requester_phone: sess.data.phone,
-        line_user_id: uid,
-        priority: Number(text),
-        status: 'new',
-      });
-
-      // อัปเดต session ด้วย ticket_id และ user_id
+      // ไปขั้นรอแนบไฟล์ (ยังไม่สร้าง ticket ณ จุดนี้)
       await checkAndRefreshTTL(uid, {
         step: 'wait_image',
         data: {
           ...sess.data,
           priority: Number(text),
-          ticket_id: ticketId,
+          // ticket_id: ticketId, // ไม่กำหนด ticket_id ตรงนี้
           user_id: requesterId
         },
         retryCount: 0,
@@ -198,13 +187,17 @@ const handleTextMessage = async (event) => {
       // หากไม่มี ให้ fallback ไปเรียก findOrCreateByLineId เพื่อสร้าง user_id ใหม่
       const requesterId = sess.data.user_id || await User.findOrCreateByLineId(uid);
 
-      // ใช้ ticket_id จาก session (ถูกสร้างไว้ตอนขั้น ask_priority) ถ้ายังไม่มีจะ fallback ไปสร้างใหม่ด้านล่าง
+      // โหลดไฟล์ temp ที่ค้าง
+      const latestSess = await sessionStore.getSession(uid);
+      const pendingFiles = latestSess?.data?.pending_files || [];
+
+      // สร้าง ticket ณ จุดยืนยันเท่านั้น (ครั้งแรก)
       let ticketId = sess.data.ticket_id;
 
       // fallback สร้าง ticket หากยังไม่มี (ไม่ควรเกิดถ้า flow ถูก)
       if (!ticketId) {
         const { insertId } = await Ticket.createTicket({
-          title: `แจ้งปัญหาจาก ${sess.data.name}`,
+          title: `${sess.data.name}`,
           description: sess.data.detail,
           requester_name: sess.data.name,
           requester_phone: sess.data.phone,
@@ -213,13 +206,15 @@ const handleTextMessage = async (event) => {
           status: 'new',
         });
         ticketId = insertId;
+
+        // เก็บ ticket_id ไว้ใน session เผื่อกรณีข้อความซ้ำ/เครือข่ายแกว่ง
+        await checkAndRefreshTTL(uid, {
+          ...sess,
+          data: { ...sess.data, ticket_id: ticketId, user_id: requesterId },
+        });
       }
 
-      // ดึงไฟล์จาก session (ที่เก็บไว้ใน temp)
-      const latestSess = await sessionStore.getSession(uid);
-      const pendingFiles = latestSess?.data?.pending_files || [];
-
-      // แยกกรณีตามข้อความของผู้ใช้
+      // แนบไฟล์ (ถ้ามี) หรือเคลียร์ temp (ถ้า "ไม่มี")
       if (lower === 'เสร็จแล้ว' && pendingFiles.length > 0) {
         for (const m of pendingFiles) {
           // ย้ายไฟล์จาก temp ไปยังโฟลเดอร์ถาวรของ ticket
