@@ -1,4 +1,4 @@
-// /index.js
+// index.js
 const path = require('path');
 const express = require('express');
 const cors = require('cors');
@@ -50,13 +50,16 @@ if (!lineWebhookPath.startsWith('/')) {
 }
 console.log(`LINE webhook listening at: /api/line${lineWebhookPath}`);
 
-// LINE webhook ต้องใช้ raw body
-app.post(`/api/line${lineWebhookPath}`, express.raw({
-  type: 'application/json',
-  verify: (req, res, buf) => {
-    req.rawBody = buf.toString();
-  }
-}));
+// // (ไม่ใช้ express.raw() ที่ index แล้วไปใช้ใน lineroute แทน)
+// app.post(`/api/line${lineWebhookPath}`, express.raw({
+//   type: 'application/json',
+//   verify: (req, res, buf) => {
+//     req.rawBody = buf.toString();
+//   }
+// }));
+
+// mount LINE routes มาก่อน body parsers รวม
+app.use('/api/line', lineRoutes);
 
 // Body parsers
 app.use(express.json());
@@ -68,7 +71,7 @@ app.use('/uploads', express.static(path.join(__dirname, 'src/line/uploads')));
 // API routes
 app.use('/api/auth', authRoutes);
 app.use('/api/tickets', ticketRoutes);
-app.use('/api/line', lineRoutes);
+// app.use('/api/line', lineRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/stats', statsRoutes);
 app.use('/api/reports', reportRoutes);
