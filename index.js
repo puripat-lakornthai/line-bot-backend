@@ -21,7 +21,7 @@ const reportRoutes = require('./src/routes/reportRoutes');
 // ตั้งค่า origin ที่อนุญาต
 const allowedOrigins = [
   process.env.CLIENT_URL, // ใช้จาก .env
-  // 'http://localhost:3000',
+  'http://localhost:3000',
   // 'http://localhost:5000',
   /^https:\/\/[a-z0-9\-]+\.ngrok-free\.app$/, // รองรับ ngrok และลองใช้ให้ติดต่อกับ frontend แล้ว ngrok พังเพราะมันมีปัญหาอะไรสักอย่างกับ CORS
   /^https:\/\/.*\.trycloudflare\.com$/, // รองรับ cloudflare tunnel
