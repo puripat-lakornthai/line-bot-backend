@@ -8,7 +8,8 @@ exports.getAllTicketsWithFilter = async (filters) => {
     status,
     assignee_id,
     sort_by = 'updated_at',
-    sort_order = 'DESC'
+    sort_order = 'DESC',
+    search,
   } = filters;
 
   // 1) whitelist sort
@@ -20,6 +21,7 @@ exports.getAllTicketsWithFilter = async (filters) => {
   // 2) WHERE
   const where = [];
   const params = [];
+
   if (status) {
     where.push('t.status = ?');
     params.push(status);
@@ -35,6 +37,21 @@ exports.getAllTicketsWithFilter = async (filters) => {
       params.push(assignee_id);
     }
   }
+
+  // เพิ่มเงื่อนไขค้นหาแบบ LIKE หลายฟิลด์ (title, description, requester_name, ticket_id)
+  if (search && search.trim() !== '') {
+    const escapeLike = (s) => s.replace(/([!%_])/g, '!$1'); // escape !, %, _
+    const kw = `%${escapeLike(search.trim())}%`;
+
+    where.push(`(
+      t.title LIKE ? ESCAPE '!'
+      OR t.description LIKE ? ESCAPE '!'
+      OR t.requester_name LIKE ? ESCAPE '!'
+      OR CAST(t.ticket_id AS CHAR) LIKE ? ESCAPE '!'
+    )`);
+    params.push(kw, kw, kw, kw);
+  }
+
   const whereClause = where.length ? `WHERE ${where.join(' AND ')}` : '';
 
   // 3) คัด ID ก่อน (อินไลน์ LIMIT/OFFSET – ไม่มี ?)

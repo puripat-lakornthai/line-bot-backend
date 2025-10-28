@@ -25,14 +25,18 @@ exports.getAllTickets = async (req, res) => {
     const limit = 2; // จำนวนรายการต่อหน้า
     const offset = (page - 1) * limit; // คำนวณ offset สำหรับ SQL
 
+    // รับคำค้นหา (รองรับทั้ง search และ q)
+    const keyword = (req.query.search ?? req.query.q ?? '').trim();
+
     // เตรียม filters สำหรับส่งเข้า model
     const filters = {
-      offset,  // เริ่มดึงจากแถวที่เท่าไร
-      limit,  // ดึงกี่รายการ
-      status: req.query.status,  // กรองสถานะ
-      assignee_id: req.query.assignee_id,   // กรองผู้รับผิดชอบ
-      sort_by: req.query.sort_by,   // เรียงตามคอลัมน์
-      sort_order: req.query.sort_order   // เรียงจากมากไปน้อย
+      offset,                 // เริ่มดึงจากแถวที่เท่าไร
+      limit,                  // ดึงกี่รายการ
+      status: req.query.status,          // กรองสถานะ
+      assignee_id: req.query.assignee_id, // กรองผู้รับผิดชอบ
+      sort_by: req.query.sort_by,         // เรียงตามคอลัมน์
+      sort_order: req.query.sort_order,   // เรียงจากมากไปน้อย
+      search: keyword || undefined,       // เพิ่มคำค้นหา (ใหม่)
     };
 
     // เรียก model เพื่อดึงข้อมูล
