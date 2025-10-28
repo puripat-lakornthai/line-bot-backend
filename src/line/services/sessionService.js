@@ -25,7 +25,7 @@ exports.getSession = async (lineUserId) => {
   //   return null; // คืน null แทน idle เพื่อให้ handleTextMessage ตรวจจับได้
   // }
 
-  // คืนค่าข้อมูล session ที่ยังใช้ได้
+  // คืนค่าข้อมูล session (ใช้ safeParse กัน JSON พัง)
   return {
     step: row.step || 'idle',          // ขั้นตอนปัจจุบันของ flow
     data: safeParse(row.data),         // parse JSON อย่างปลอดภัย
