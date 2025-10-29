@@ -188,7 +188,7 @@ exports.deleteTicket = async (req, res) => {
     if (ticket.line_user_id) {
       await pushDone(
         ticket.line_user_id,
-        `❌ งาน "${ticket.title}" (#${ticket.ticket_id}) ที่ส่งเมื่อ ${new Date(ticket.created_at).toLocaleString('th-TH')} ถูกลบโดยเจ้าหน้าที่`
+        `❌ คำร้องปัญหาจากคุณ "${ticket.title}" (#${ticket.ticket_id}) ที่ส่งเมื่อ ${new Date(ticket.created_at).toLocaleString('th-TH')} ถูกลบโดยเจ้าหน้าที่`
       );
     }
 

@@ -80,6 +80,8 @@ exports.downloadTicketReport = async (req, res) => {
       'Content-Type',
       'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
     );
+
+    // ตั้งชื่อไฟล์ที่โหลดตรงนี้
     res.setHeader('Content-Disposition', 'attachment; filename=tickets_report.xlsx');
 
     await workbook.xlsx.write(res);
