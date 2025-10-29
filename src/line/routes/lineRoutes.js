@@ -26,13 +26,15 @@ const headerLogger = (req, res, next) => {
 
 router.post(
   LINE_WEBHOOK_PATH,
-  // 1 เก็บ raw body (Buffer) + ให้ req.body เป็น JSON
+  // เก็บ raw body ก่อน express.json() parse เพื่อให้ verify ได้ทุก environment
   express.json({
-    verify: (req, res, buf) => { req.rawBody = buf; }
+    verify: (req, res, buf) => {
+      req.rawBody = buf.toString('utf8'); // เก็บ payload ดิบไว้
+    }
   }),
   // (เพิ่ม) log header ภายใน request context
   headerLogger,
-  // 2 ตรวจลายเซ็นจาก raw body
+  // 2 ตรวจลายเซ็นจาก raw body (ใช้ req.rawBody ภายใน middleware)
   validateLineSignatureMiddleware,
   // 3 ไป handler (ได้ req.body เป็น object แล้ว)
   lineWebhookHandler
