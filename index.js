@@ -27,6 +27,7 @@ const allowedOrigins = [
   /^https:\/\/.*\.trycloudflare\.com$/, // รองรับ cloudflare tunnel
   /^https:\/\/[a-z0-9\-]+\.loca\.lt$/, // รองรับ localtunnel
   'https://puripat.online',
+  'helpdesk-line.netlify.app',
 ];
 
 // CORS whitelist + credentials
