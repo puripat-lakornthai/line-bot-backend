@@ -158,13 +158,24 @@ const handleTextMessage = async (event) => {
       // ดึง user_id จาก database หรือลงทะเบียนใหม่หากยังไม่มี
       const requesterId = await User.findOrCreateByLineId(uid);
 
-      // ไปขั้นรอแนบไฟล์ (ยังไม่สร้าง ticket ณ จุดนี้)
+      // สร้าง ticket ทันที เพื่อให้มี ticketId ไปตั้งชื่อไฟล์แนบ
+      const { insertId: ticketId } = await Ticket.createTicket({
+        title: `${sess.data.name}`,
+        description: sess.data.detail,
+        requester_name: sess.data.name,
+        requester_phone: sess.data.phone,
+        line_user_id: uid,
+        priority: Number(text),
+        status: 'new',
+      });
+
+      // เก็บ ticket_id และ user_id ลง session แล้วเข้าสู่ขั้นรอแนบไฟล์
       await checkAndRefreshTTL(uid, {
         step: 'wait_image',
         data: {
           ...sess.data,
           priority: Number(text),
-          // ticket_id: ticketId, // ไม่กำหนด ticket_id ตรงนี้
+          ticket_id: ticketId,
           user_id: requesterId
         },
         retryCount: 0,
@@ -187,14 +198,10 @@ const handleTextMessage = async (event) => {
       // หากไม่มี ให้ fallback ไปเรียก findOrCreateByLineId เพื่อสร้าง user_id ใหม่
       const requesterId = sess.data.user_id || await User.findOrCreateByLineId(uid);
 
-      // โหลดไฟล์ temp ที่ค้าง
-      const latestSess = await sessionStore.getSession(uid);
-      const pendingFiles = latestSess?.data?.pending_files || [];
-
-      // สร้าง ticket ณ จุดยืนยันเท่านั้น (ครั้งแรก)
+      // ใช้ ticket_id จาก session (ถูกสร้างไว้ตั้งแต่ ask_priority)
       let ticketId = sess.data.ticket_id;
 
-      // fallback สร้าง ticket หากยังไม่มี (ไม่ควรเกิดถ้า flow ถูก)
+      // (กันสุดวิสัย) ถ้าไม่มีจริง ๆ ค่อยสร้างใหม่
       if (!ticketId) {
         const { insertId } = await Ticket.createTicket({
           title: `${sess.data.name}`,
@@ -206,31 +213,49 @@ const handleTextMessage = async (event) => {
           status: 'new',
         });
         ticketId = insertId;
-
-        // เก็บ ticket_id ไว้ใน session เผื่อกรณีข้อความซ้ำ/เครือข่ายแกว่ง
-        await checkAndRefreshTTL(uid, {
-          ...sess,
-          data: { ...sess.data, ticket_id: ticketId, user_id: requesterId },
-        });
+        await checkAndRefreshTTL(uid, { ...sess, data: { ...sess.data, ticket_id: ticketId } });
       }
+
+      // โหลดไฟล์ temp ที่ค้าง
+      const latestSess = await sessionStore.getSession(uid);
+      const pendingFiles = latestSess?.data?.pending_files || [];
 
       // แนบไฟล์ (ถ้ามี) หรือเคลียร์ temp (ถ้า "ไม่มี")
       if (lower === 'เสร็จแล้ว' && pendingFiles.length > 0) {
-        for (const m of pendingFiles) {
-          // ย้ายไฟล์จาก temp ไปยังโฟลเดอร์ถาวรของ ticket
-          const perm = await moveTempToPermanent(m, ticketId);
+        // 🔧 เพิ่มความทนทาน: ข้ามไฟล์ที่ถูกลบไปแล้ว (ENOENT) ไม่ให้ flow พัง
+        const fs = require('fs');
+        const path = require('path');
+        const rootDir = path.join(__dirname, '..');
 
-          // บันทึกไฟล์แนบลงใน database
-          await Ticket.addAttachments(
-            ticketId,
-            [{
-              file_name: perm.originalname,
-              file_path: perm.path,
-              mime_type: perm.mimetype,
-              file_size: perm.size,
-            }],
-            requesterId
-          );
+        for (const m of pendingFiles) {
+          try {
+            const srcAbs = path.join(rootDir, m.path);
+            if (!fs.existsSync(srcAbs)) {
+              // temp ถูกลบไปแล้ว (เช่น cleaner/ผู้ใช้ยกเลิก) → ข้ามไฟล์นี้
+              continue;
+            }
+
+            // ย้ายไฟล์จาก temp ไปยังโฟลเดอร์ถาวรของ ticket
+            const perm = await moveTempToPermanent(m, ticketId);
+
+            // บันทึกไฟล์แนบลงใน database
+            await Ticket.addAttachments(
+              ticketId,
+              [{
+                file_name: perm.originalname,
+                file_path: perm.path,
+                mime_type: perm.mimetype,
+                file_size: perm.size,
+              }],
+              requesterId
+            );
+          } catch (e) {
+            if (e && e.code === 'ENOENT') {
+              // ถูกลบระหว่างย้าย → ข้ามไฟล์นี้
+              continue;
+            }
+            throw e; // error อื่นให้แจ้งออกไปตามปกติ
+          }
         }
       } else if (lower === 'ไม่มี' && pendingFiles.length > 0) {
         // ผู้ใช้ไม่ต้องการแนบไฟล์ → ลบไฟล์ temp ที่ค้างอยู่ทั้งหมด

@@ -6,7 +6,7 @@ const { pushDone } = require('../utils/lineClient'); // ใช้ push แจ้
 const ACK_COOLDOWN_MS = 5000; // 5 วินาที
 
 // กำหนดอายุ session ถ้าเงียบเกินเวลานี้จะหมดอายุ
-const EXPIRE_MS = 25000; // 25 วินาที
+const EXPIRE_MS = 50000; // 50 วินาที
 
 // เก็บ timer ของแต่ละ user
 const expireTimers = new Map();
