@@ -18,11 +18,11 @@ const validateLineSignatureMiddleware = require('../middleware/validateLineSigna
 const LINE_WEBHOOK_PATH = process.env.LINE_WEBHOOK_PATH || '/webhook';
 
 // middleware สำหรับ log header
-const headerLogger = (req, res, next) => {
-  console.log(req.headers);                 // ทั้งหมด
-  console.log(req.get('x-line-signature')); // เฉพาะ signature
-  next();
-};
+// const headerLogger = (req, res, next) => {
+//   console.log(req.headers);                 // ทั้งหมด
+//   console.log(req.get('x-line-signature')); // เฉพาะ signature
+//   next();
+// };
 
 router.post(
   LINE_WEBHOOK_PATH,
@@ -31,7 +31,7 @@ router.post(
     verify: (req, res, buf) => { req.rawBody = buf; }
   }),
   // (เพิ่ม) log header ภายใน request context
-  headerLogger,
+  // headerLogger,
   // 2 ตรวจลายเซ็นจาก raw body
   validateLineSignatureMiddleware,
   // 3 ไป handler (ได้ req.body เป็น object แล้ว)
