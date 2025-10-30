@@ -7,6 +7,8 @@ const {
   handleVideoMessage
 } = require('../services/lineMessageService');
 
+const sessionService = require('../services/sessionService');
+
 // const { lineMessagingApiConfig } = require('../config/lineConfig');
 // const line = require('@line/bot-sdk');
 
@@ -16,7 +18,7 @@ const {
 //   if (!signature || !req.rawBody || !lineMessagingApiConfig.channelSecret) {
 //     return res.status(400).send('Missing signature or rawBody');
 //   }
-
+//
 //   const isValid = line.validateSignature(req.rawBody, lineMessagingApiConfig.channelSecret, signature);
 //   if (!isValid) return res.status(401).send('Invalid signature');
 //   next();
@@ -38,6 +40,9 @@ exports.lineWebhookHandler = async (req, res) => {
       // ประมวลผลแบบ async แต่ไม่รอให้เสร็จก่อนตอบ LINE
       (async () => {
         try {
+          const uid = event?.source?.userId;           
+          await sessionService.heartbeat(uid);
+
           if (type === 'text') {
             await handleTextMessage(event);
           } else if (type === 'image') {

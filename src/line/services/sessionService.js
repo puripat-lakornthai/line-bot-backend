@@ -43,3 +43,13 @@ exports.setSession = async (lineUserId, session) => {
 exports.clearSession = async (lineUserId) => {
   await sessionModel.clearSession(lineUserId);
 };
+
+// เรียกก่อนเข้า flow ทุก event เพื่อยืดอายุ session
+// ถ้ามี session อยู่แล้ว ให้ขยับ updated_at เพื่อกันหมดอายุระหว่าง user ตอบช้า
+exports.heartbeat = async (lineUserId) => {
+  if (!lineUserId) return;
+  const s = await sessionModel.getSessionByLineUserId(lineUserId);
+  if (s) {
+    await sessionModel.touch(lineUserId);
+  }
+};

@@ -41,6 +41,9 @@ const armExpirePush = (uid, sess) => {
 
       // push เฉพาะกรณี: หมดอายุจริง + ยังไม่เคยเตือน + ยังอยู่ขั้นทำฟอร์ม (ไม่ใช่ idle)
       if (isExpired && !alreadyNotified && latest.step !== 'idle') {
+        // เพิ่ม log ให้ขึ้นใน server เมื่อ session หมดอายุ (กรณีหมดจาก timer)
+        console.warn(`⚠️ Session expired (TTL ${EXPIRE_MS / 1000}s) for user ${uid}`);
+
         // seed กลับไป idle พร้อม mark ว่ามีการเตือนแล้ว และยืด TTL รอบใหม่
         const seeded = {
           ...latest,
@@ -99,6 +102,10 @@ const checkAndRefreshTTL = async (uid, sess) => {
   const isExpired = sess.expiresAt && Date.now() > sess.expiresAt;
   if (isExpired) {
     const expiredAt = sess.expiresAt;
+
+    // เพิ่ม log ให้ขึ้นใน server เมื่อ session หมดอายุ (กรณีตรวจเจอตอนเช็ก TTL)
+    console.warn(`⚠️ Session expired (TTL ${EXPIRE_MS / 1000}s) for user ${uid} at ${new Date(expiredAt).toISOString()}`);
+
     const seeded = {
       step: 'idle',
       data: { ...(sess.data || {}) },

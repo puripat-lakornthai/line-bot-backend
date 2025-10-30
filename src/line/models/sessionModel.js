@@ -45,3 +45,12 @@ exports.clearSession = async (lineUserId) => {
     [lineUserId]
   );
 };
+
+// อัปเดต updated_at ทุกครั้งที่มี event
+// ใช้คู่กับ heartbeat ตรวจ TTL ที่อ้างอิง updated_at เพื่อตัดสินว่า session หมดอายุหรือยัง
+exports.touch = async (lineUserId) => {
+  await db.query(
+    'UPDATE user_sessions SET updated_at = CURRENT_TIMESTAMP WHERE line_user_id = ?',
+    [lineUserId]
+  );
+};
