@@ -10,6 +10,10 @@ const { isSpammyText, isInvalidPhone, isInvalidName } = require('../utils/valida
 const { moveTempToPermanent, deleteTempFiles } = require('../services/mediaService');
 const { increaseRetry, checkAndRefreshTTL } = require('../utils/sessionUtils');
 
+// ใช้ในช่วงรีเนมหลังย้ายไฟล์
+const fs = require('fs');
+const path = require('path');
+
 // ป้ายสถานะของ Tickets
 const statusLabel = {
   new: 'ใหม่',
@@ -158,25 +162,18 @@ const handleTextMessage = async (event) => {
       // ดึง user_id จาก database หรือลงทะเบียนใหม่หากยังไม่มี
       const requesterId = await User.findOrCreateByLineId(uid);
 
-      // สร้าง ticket ทันที เพื่อให้มี ticketId ไปตั้งชื่อไฟล์แนบ
-      const { insertId: ticketId } = await Ticket.createTicket({
-        title: `${sess.data.name}`,
-        description: sess.data.detail,
-        requester_name: sess.data.name,
-        requester_phone: sess.data.phone,
-        line_user_id: uid,
-        priority: Number(text),
-        status: 'new',
-      });
+      // ไม่สร้าง ticket ที่ขั้นนี้ — ออก draft_id สำหรับตั้งชื่อไฟล์ temp ให้ไม่เป็น "unknown"
+      const draftId = `draft_${uid.slice(-6)}_${Date.now().toString(36)}`;
 
-      // เก็บ ticket_id และ user_id ลง session แล้วเข้าสู่ขั้นรอแนบไฟล์
+      // เก็บ draft_id และใช้เป็น ticket_id ชั่วคราว เพื่อให้ mediaHandler/downloadLineMedia ตั้งชื่อไฟล์ temp ได้เลย
       await checkAndRefreshTTL(uid, {
         step: 'wait_image',
         data: {
           ...sess.data,
           priority: Number(text),
-          ticket_id: ticketId,
-          user_id: requesterId
+          user_id: requesterId,
+          draft_id: draftId,
+          ticket_id: draftId, // ใช้ชั่วคราวให้ไฟล์ temp 
         },
         retryCount: 0,
       });
@@ -184,8 +181,8 @@ const handleTextMessage = async (event) => {
       return reply(
         event.replyToken,
         '📎 กรุณาส่งภาพ ไฟล์ หรือวิดีโอที่เกี่ยวข้อง\n' +
-        '• พิมพ์ "เสร็จแล้ว" เพื่อยืนยันการแนบไฟล์\n' +
-        '• พิมพ์ "ไม่มี" หากไม่ต้องการแนบไฟล์\n' +
+        '• พิมพ์ "เสร็จแล้ว" เพื่อยืนยันการแนบไฟล์และบันทึกงาน\n' +
+        '• พิมพ์ "ไม่มี" หากไม่ต้องการแนบไฟล์ (จะบันทึกงานเช่นกัน)\n' +
         '• พิมพ์ "ยกเลิก" เพื่อยกเลิกการแจ้งปัญหา'
       );
     }
@@ -198,11 +195,11 @@ const handleTextMessage = async (event) => {
       // หากไม่มี ให้ fallback ไปเรียก findOrCreateByLineId เพื่อสร้าง user_id ใหม่
       const requesterId = sess.data.user_id || await User.findOrCreateByLineId(uid);
 
-      // ใช้ ticket_id จาก session (ถูกสร้างไว้ตั้งแต่ ask_priority)
+      // ใช้ ticket_id จาก session (ถ้าเป็น draft_ ให้สร้างตัวจริงตอนนี้)
       let ticketId = sess.data.ticket_id;
 
-      // (กันสุดวิสัย) ถ้าไม่มีจริง ๆ ค่อยสร้างใหม่
-      if (!ticketId) {
+      // ถ้ายังเป็น draft ให้สร้าง ticket จริงตอนผู้ใช้คอนเฟิร์ม
+      if (!ticketId || String(ticketId).startsWith('draft_')) {
         const { insertId } = await Ticket.createTicket({
           title: `${sess.data.name}`,
           description: sess.data.detail,
@@ -213,6 +210,7 @@ const handleTextMessage = async (event) => {
           status: 'new',
         });
         ticketId = insertId;
+        // อัปเดต session ให้รู้ ticket_id จริง แต่เก็บ draft_id เดิมไว้เผื่ออ้างอิงชื่อไฟล์ temp
         await checkAndRefreshTTL(uid, { ...sess, data: { ...sess.data, ticket_id: ticketId } });
       }
 
@@ -220,14 +218,16 @@ const handleTextMessage = async (event) => {
       const latestSess = await sessionStore.getSession(uid);
       const pendingFiles = latestSess?.data?.pending_files || [];
 
-      // แนบไฟล์ (ถ้ามี) หรือเคลียร์ temp (ถ้า "ไม่มี")
+      // แนบไฟล์ (ถ้ามี) หรือเคลียร์ temp (ถ้าไม่มี)
       if (lower === 'เสร็จแล้ว' && pendingFiles.length > 0) {
         // 🔧 เพิ่มความทนทาน: ข้ามไฟล์ที่ถูกลบไปแล้ว (ENOENT) ไม่ให้ flow พัง
-        const fs = require('fs');
-        const path = require('path');
+        // const fs = require('fs');
+        // const path = require('path');
         const rootDir = path.join(__dirname, '..');
 
-        for (const m of pendingFiles) {
+        // ใช้ for-index เพื่อให้ได้ลำดับไฟล์ชัดเจน
+        for (let i = 0; i < pendingFiles.length; i++) {
+          const m = pendingFiles[i];
           try {
             const srcAbs = path.join(rootDir, m.path);
             if (!fs.existsSync(srcAbs)) {
@@ -238,12 +238,47 @@ const handleTextMessage = async (event) => {
             // ย้ายไฟล์จาก temp ไปยังโฟลเดอร์ถาวรของ ticket
             const perm = await moveTempToPermanent(m, ticketId);
 
-            // บันทึกไฟล์แนบลงใน database
+            // ---- รีเนมชื่อไฟล์ให้ยาวและกันซ้ำ: ticket_<ticketId>_<YYYYMMDD_HHMMSS>_<seq>_<rand4>.<ext>
+            let finalName = perm.originalname;
+            let finalPath = perm.path;
+
+            const absPerm = path.join(rootDir, perm.path);
+            const dirAbs  = path.dirname(absPerm);
+            const base    = path.basename(absPerm);
+            const ext     = (path.extname(base) || '').toLowerCase();
+
+            // ต้องรีเนมหรือไม่ (กรณียังเป็น ticket_draft_ / ticket_unknown หรือชื่อไม่ตรงรูปแบบใหม่)
+            const needRename = /^(ticket_draft_|ticket_unknown)/.test(base);
+
+            // timestamp แบบสั้น YYYYMMDD_HHMMSS
+            const now = new Date();
+            const pad = n => String(n).padStart(2, '0');
+            const ts  = `${now.getFullYear()}${pad(now.getMonth()+1)}${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+
+            const seq = i + 1;
+            const rand = Math.random().toString(36).slice(2, 6);
+            const desiredBase = `ticket_${ticketId}_${ts}_${seq}_${rand}${ext || ''}`;
+            let destAbs = path.join(dirAbs, desiredBase);
+
+            if (needRename || base !== desiredBase) {
+              // กันซ้ำชื่ออีกรอบหากยังชน
+              if (fs.existsSync(destAbs)) {
+                const rand2 = Math.random().toString(36).slice(2, 6);
+                destAbs = path.join(dirAbs, `ticket_${ticketId}_${ts}_${seq}_${rand}_${rand2}${ext || ''}`);
+              }
+              await fs.promises.rename(absPerm, destAbs);
+
+              finalName = path.basename(destAbs);
+              finalPath = path.join(path.dirname(perm.path), finalName).replace(/\\/g, '/');
+            }
+            // จบ rename
+
+            // บันทึกไฟล์แนบลงใน database ด้วยชื่อ/พาธสุดท้าย
             await Ticket.addAttachments(
               ticketId,
               [{
-                file_name: perm.originalname,
-                file_path: perm.path,
+                file_name: finalName,
+                file_path: finalPath,
                 mime_type: perm.mimetype,
                 file_size: perm.size,
               }],
