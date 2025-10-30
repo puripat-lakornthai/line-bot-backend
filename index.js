@@ -83,17 +83,17 @@ app.get('/health', (req, res) => {
 });
 
 // require() มัน เป็นคำสั่งที่โหลดไฟล์ได้ทุกที่ ตอนแรกใช้ import แล้วมันพังตอน verify ใน line
-// 🧹 ล้างไฟล์ temp อัตโนมัติ "ทุกๆ 1 นาที"
-// และจะลบไฟล์ที่ "อายุมากกว่า 1 นาที"
+// 🧹 ล้างไฟล์ temp อัตโนมัติ "ทุกๆ 10 นาที"
+// และจะลบไฟล์ที่ "อายุมากกว่า 5 นาที"
 setInterval(() => {
   console.log(`🧹 ล้างไฟล์ temp (${new Date().toLocaleString('th-TH')})`);
   try {
     const { cleanOldTempFiles } = require('./src/line/services/mediaService');
-    cleanOldTempFiles(5); // ← สำคัญ: หน่วยเป็น "นาที" (เดิม 60 = 60 นาที)
+    cleanOldTempFiles(5); // ลบไฟล์เก่าจากโฟลเดอร์ temp ที่มีอายุมากกว่า 5 นาที
   } catch (err) {
     console.error('❌ ล้างไฟล์ temp ล้มเหลว:', err.message);
   }
-}, 1000 * 60 * 2); // เรียกทุก 1 นาที
+}, 1000 * 60 * 10); // เรียกทุก 10 นาที
 
 // Start server
 const PORT = process.env.PORT || 3001;
